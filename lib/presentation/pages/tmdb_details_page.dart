@@ -1080,7 +1080,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    final dialog = AlertDialog(
       backgroundColor: widget.dominantColor,
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1268,13 +1268,17 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
           child: const Text('Close', style: TextStyle(color: Colors.white)),
         ),
       ],
-    ).then((_) {
-      // Show quality threshold dialog if requested
-      if (_showingQualityDialog) {
-        _showingQualityDialog = false;
+    );
+
+    // Show quality dialog if needed
+    if (_showingQualityDialog) {
+      _showingQualityDialog = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         _showQualityThresholdDialog();
-      }
-    });
+      });
+    }
+
+    return dialog;
   }
 
   Future<void> _showQualityThresholdDialog() async {
@@ -1495,7 +1499,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                 if (isExpanded) {
                   _expandedServices[serviceKey]!.clear();
                 } else {
-                  _expandedServices[serviceKey] = lowQuality.map((r) => r.id).toSet();
+                  _expandedServices[serviceKey] = lowQuality.map((r) => r.id ?? '').where((id) => id.isNotEmpty).toSet();
                 }
               });
             },
