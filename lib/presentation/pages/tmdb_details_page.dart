@@ -40,11 +40,14 @@ class TMDBDetailsPage extends ConsumerStatefulWidget {
 
 class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
   Color _dominantColor = const Color(0xFF1a1a1a);
+  Color _textColor = Colors.white;
+  Color _subtitleColor = Colors.white70;
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _updateTextColors(); // Initialize text colors with default background
     _extractDominantColor();
     // Delay the provider modification until after the build
     Future.microtask(() => _loadDetails());
@@ -101,11 +104,26 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
         if (mounted) {
           setState(() {
             _dominantColor = dominantColor;
+            _updateTextColors();
           });
         }
       } catch (e) {
         // Use default color if extraction fails
       }
+    }
+  }
+
+  void _updateTextColors() {
+    // Calculate brightness of dominant color
+    final brightness = _dominantColor.computeLuminance();
+    
+    // If background is light, use dark text; if dark, use light text
+    if (brightness > 0.5) {
+      _textColor = Colors.black87;
+      _subtitleColor = Colors.black54;
+    } else {
+      _textColor = Colors.white;
+      _subtitleColor = Colors.white70;
     }
   }
 
@@ -132,15 +150,15 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
           colors: [_dominantColor, _dominantColor.withOpacity(0.8)],
         ),
       ),
-      child: const Center(
+      child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(color: Colors.white),
-            SizedBox(height: 16),
+            CircularProgressIndicator(color: _textColor),
+            const SizedBox(height: 16),
             Text(
               'Loading details...',
-              style: TextStyle(color: Colors.white, fontSize: 16),
+              style: TextStyle(color: _textColor, fontSize: 16),
             ),
           ],
         ),
@@ -171,8 +189,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
               const SizedBox(height: 16),
               Text(
                 'Failed to load details',
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: _textColor,
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                 ),
@@ -180,7 +198,7 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
               const SizedBox(height: 8),
               Text(
                 error,
-                style: const TextStyle(color: Colors.white70, fontSize: 14),
+                style: TextStyle(color: _subtitleColor, fontSize: 14),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
@@ -279,15 +297,15 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: _textColor,
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
                           shadows: [
                             Shadow(
-                              offset: Offset(0, 2),
+                              offset: const Offset(0, 2),
                               blurRadius: 4,
-                              color: Colors.black54,
+                              color: _textColor == Colors.white ? Colors.black54 : Colors.white54,
                             ),
                           ],
                         ),
@@ -419,8 +437,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
             const SizedBox(width: 4),
             Text(
               rating.toStringAsFixed(1),
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: _textColor,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
@@ -433,33 +451,33 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
     // Year
     String? date = movieDetail?.releaseDate ?? tvShowDetail?.firstAirDate;
     if (date != null && date.isNotEmpty) {
-      if (metadata.isNotEmpty) metadata.add(const Text('  •  ', style: TextStyle(color: Colors.white70)));
+      if (metadata.isNotEmpty) metadata.add(Text('  •  ', style: TextStyle(color: _subtitleColor)));
       metadata.add(
         Text(
           date.split('-')[0],
-          style: const TextStyle(color: Colors.white70, fontSize: 14),
+          style: TextStyle(color: _subtitleColor, fontSize: 14),
         ),
       );
     }
     
     // Runtime/Episodes
     if (movieDetail?.runtime != null) {
-      if (metadata.isNotEmpty) metadata.add(const Text('  •  ', style: TextStyle(color: Colors.white70)));
+      if (metadata.isNotEmpty) metadata.add(Text('  •  ', style: TextStyle(color: _subtitleColor)));
       final runtime = movieDetail!.runtime!;
       final hours = runtime ~/ 60;
       final minutes = runtime % 60;
       metadata.add(
         Text(
           hours > 0 ? '${hours}h ${minutes}m' : '${minutes}m',
-          style: const TextStyle(color: Colors.white70, fontSize: 14),
+          style: TextStyle(color: _subtitleColor, fontSize: 14),
         ),
       );
     } else if (tvShowDetail?.numberOfEpisodes != null) {
-      if (metadata.isNotEmpty) metadata.add(const Text('  •  ', style: TextStyle(color: Colors.white70)));
+      if (metadata.isNotEmpty) metadata.add(Text('  •  ', style: TextStyle(color: _subtitleColor)));
       metadata.add(
         Text(
           '${tvShowDetail!.numberOfEpisodes} episodes',
-          style: const TextStyle(color: Colors.white70, fontSize: 14),
+          style: TextStyle(color: _subtitleColor, fontSize: 14),
         ),
       );
     }
@@ -473,10 +491,10 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Overview',
             style: TextStyle(
-              color: Colors.white,
+              color: _textColor,
               fontSize: 20,
               fontWeight: FontWeight.bold,
             ),
@@ -484,8 +502,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
           const SizedBox(height: 12),
           Text(
             overview,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: _textColor,
               fontSize: 16,
               height: 1.5,
             ),
@@ -502,10 +520,10 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Details',
             style: TextStyle(
-              color: Colors.white,
+              color: _textColor,
               fontSize: 20,
               fontWeight: FontWeight.bold,
             ),
@@ -570,10 +588,10 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Seasons',
             style: TextStyle(
-              color: Colors.white,
+              color: _textColor,
               fontSize: 20,
               fontWeight: FontWeight.bold,
             ),
@@ -636,7 +654,7 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
                           child: Text(
                             seasonDetail?.name ?? 'Season $seasonNumber',
                             style: TextStyle(
-                              color: isSelected ? Colors.blue : Colors.white,
+                              color: isSelected ? Colors.blue : _textColor,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                             ),
@@ -675,10 +693,10 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
           color: Colors.black.withOpacity(0.3),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: const Center(
+        child: Center(
           child: Text(
             'Loading episodes...',
-            style: TextStyle(color: Colors.white70),
+            style: TextStyle(color: _subtitleColor),
           ),
         ),
       );
@@ -724,8 +742,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
                           child: Center(
                             child: Text(
                               '${episode.episodeNumber}',
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: _textColor,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -736,8 +754,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
                           child: Center(
                             child: Text(
                               '${episode.episodeNumber}',
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: _textColor,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -749,8 +767,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
                         child: Center(
                           child: Text(
                             '${episode.episodeNumber}',
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: _textColor,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -767,8 +785,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
                         Expanded(
                           child: Text(
                             episode.name ?? 'Episode ${episode.episodeNumber}',
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: _textColor,
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),
@@ -782,10 +800,10 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
                               color: Colors.orange,
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: const Text(
+                            child: Text(
                               'Continue',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: _textColor,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -798,8 +816,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
                       const SizedBox(height: 4),
                       Text(
                         episode.overview!,
-                        style: const TextStyle(
-                          color: Colors.white70,
+                        style: TextStyle(
+                          color: _subtitleColor,
                           fontSize: 14,
                         ),
                         maxLines: 2,
@@ -812,25 +830,25 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
                         if (episode.airDate?.isNotEmpty == true) ...[
                           Text(
                             episode.airDate!,
-                            style: const TextStyle(
-                              color: Colors.white60,
+                            style: TextStyle(
+                              color: _subtitleColor.withOpacity(0.8),
                               fontSize: 12,
                             ),
                           ),
-                          if (episode.runtime != null) const Text(' • ', style: TextStyle(color: Colors.white60)),
+                          if (episode.runtime != null) Text(' • ', style: TextStyle(color: _subtitleColor.withOpacity(0.8))),
                         ],
                         if (episode.runtime != null && episode.runtime! > 0) ...[
                           Text(
                             '${episode.runtime}m',
-                            style: const TextStyle(
-                              color: Colors.white60,
+                            style: TextStyle(
+                              color: _subtitleColor.withOpacity(0.8),
                               fontSize: 12,
                             ),
                           ),
                         ],
                         if (episode.voteAverage > 0) ...[
-                          const Text(' • ', style: TextStyle(color: Colors.white60)),
-                          Icon(
+                          Text(' • ', style: TextStyle(color: _subtitleColor.withOpacity(0.8))),
+                          const Icon(
                             Icons.star,
                             color: Colors.amber,
                             size: 14,
@@ -838,8 +856,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
                           const SizedBox(width: 2),
                           Text(
                             episode.voteAverage.toStringAsFixed(1),
-                            style: const TextStyle(
-                              color: Colors.white60,
+                            style: TextStyle(
+                              color: _subtitleColor.withOpacity(0.8),
                               fontSize: 12,
                             ),
                           ),
@@ -869,8 +887,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
             width: 100,
             child: Text(
               '$label:',
-              style: const TextStyle(
-                color: Colors.white70,
+              style: TextStyle(
+                color: _subtitleColor,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
@@ -879,8 +897,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: _textColor,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
@@ -1094,13 +1112,32 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
   final Map<String, Set<String>> _expandedServices = {};
   double _qualityThreshold = 0.9;
   bool _showingQualityDialog = false;
+  
+  // Adaptive text colors based on dominant color
+  late Color _textColor;
+  late Color _subtitleColor;
 
   @override
   void initState() {
     super.initState();
+    _updateTextColors();
     _loadQualityThreshold();
     // Delay the search to avoid modifying provider during build
     Future.microtask(() => _performMultiServiceSearch());
+  }
+  
+  void _updateTextColors() {
+    // Calculate brightness of dominant color
+    final brightness = widget.dominantColor.computeLuminance();
+    
+    // If background is light, use dark text; if dark, use light text
+    if (brightness > 0.5) {
+      _textColor = Colors.black87;
+      _subtitleColor = Colors.black54;
+    } else {
+      _textColor = Colors.white;
+      _subtitleColor = Colors.white70;
+    }
   }
 
   Future<void> _loadQualityThreshold() async {
@@ -1247,18 +1284,18 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
             widget.episode != null 
                 ? 'Find Episode' 
                 : 'Find Content',
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(color: _textColor),
           ),
           const SizedBox(height: 4),
           Text(
             'Searching: "${widget.searchQuery}"',
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
+            style: TextStyle(color: _subtitleColor, fontSize: 14),
           ),
           if (widget.episode != null) ...[
             const SizedBox(height: 4),
             Text(
               'Season ${widget.episode!.seasonNumber}, Episode ${widget.episode!.episodeNumber}',
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+              style: TextStyle(color: _subtitleColor, fontSize: 12),
             ),
           ],
         ],
@@ -1275,7 +1312,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   PopupMenuButton<SimilarityAlgorithm>(
-                    icon: const Icon(Icons.tune, color: Colors.white70),
+                    icon: Icon(Icons.tune, color: _subtitleColor),
                     onSelected: (algorithm) {
                       setState(() {
                         SimilarityCalculator.selectedAlgorithm = algorithm;
@@ -1301,7 +1338,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                     onPressed: () => setState(() => _showingQualityDialog = true),
                     child: Text(
                       'Quality: ${(_qualityThreshold * 100).round()}%',
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      style: TextStyle(color: _subtitleColor, fontSize: 12),
                     ),
                   ),
                 ],
@@ -1321,7 +1358,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                   children: [
                     Text(
                       'Services: ${_searchProgress.completedServices}/${_searchProgress.totalServices}',
-                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.bold),
                     ),
                     if (_searchProgress.isCompleted)
                       const Row(
@@ -1338,7 +1375,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                         height: 16,
                         child: CircularProgressIndicator(
                           value: _searchProgress.progress,
-                          color: Colors.white,
+                          color: _textColor,
                           strokeWidth: 2,
                         ),
                       ),
@@ -1348,7 +1385,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
               const SizedBox(height: 8),
               Text(
                 'Total Results: ${_searchProgress.totalResultsCount}',
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                style: TextStyle(color: _subtitleColor, fontSize: 12),
               ),
               const SizedBox(height: 16),
             ],
@@ -1373,7 +1410,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                           const SizedBox(height: 16),
                           Text(
                             _errorMessage!,
-                            style: const TextStyle(color: Colors.white70),
+                            style: TextStyle(color: _subtitleColor),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 16),
@@ -1383,25 +1420,25 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                                 Navigator.of(context).pop();
                                 context.push('/settings');
                               },
-                              icon: const Icon(Icons.settings),
+                              icon: Icon(Icons.settings, color: _textColor),
                               label: const Text('Go to Settings'),
                             )
                           else
                             ElevatedButton(
                               onPressed: _performMultiServiceSearch,
-                              child: const Text('Retry'),
+                              child: Text('Retry'),
                             ),
                         ],
                       ),
                     )
                   : _searchProgress.totalResultsCount == 0 && _searchProgress.isCompleted
-                      ? const Center(
+                      ? Center(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.search_off, color: Colors.white54, size: 48),
-                              SizedBox(height: 16),
+                              Icon(Icons.search_off, color: _subtitleColor, size: 48),
+                              const SizedBox(height: 16),
                               Text(
                                 'No results found',
                                 style: TextStyle(color: Colors.white70),
@@ -1423,7 +1460,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close', style: TextStyle(color: Colors.white)),
+          child: Text('Close', style: TextStyle(color: _textColor)),
         ),
       ],
     );
@@ -1448,33 +1485,33 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: widget.dominantColor,
-        title: const Text(
+        title: Text(
           'Quality Threshold',
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: _textColor),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               'Set the minimum similarity score (0-100%) for results to be considered high quality.',
-              style: const TextStyle(color: Colors.white70),
+              style: TextStyle(color: _subtitleColor),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
               keyboardType: TextInputType.number,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: _textColor),
               decoration: InputDecoration(
                 hintText: 'Enter percentage (e.g., 90)',
-                hintStyle: const TextStyle(color: Colors.white54),
+                hintStyle: TextStyle(color: _subtitleColor.withOpacity(0.8)),
                 suffixText: '%',
-                suffixStyle: const TextStyle(color: Colors.white70),
+                suffixStyle: TextStyle(color: _subtitleColor),
                 border: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Colors.white54),
+                  borderSide: BorderSide(color: _subtitleColor.withOpacity(0.8)),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Colors.white54),
+                  borderSide: BorderSide(color: _subtitleColor.withOpacity(0.8)),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 focusedBorder: OutlineInputBorder(
@@ -1488,7 +1525,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            child: Text('Cancel', style: TextStyle(color: _subtitleColor)),
           ),
           TextButton(
             onPressed: () async {
@@ -1539,13 +1576,13 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                       width: 20,
                       height: 20,
                       color: Colors.white.withValues(alpha: 0.1),
-                      child: const Icon(Icons.public, color: Colors.white54, size: 12),
+                      child: Icon(Icons.public, color: _subtitleColor, size: 12),
                     ),
                     errorWidget: (context, url, error) => Container(
                       width: 20,
                       height: 20,
                       color: Colors.white.withValues(alpha: 0.1),
-                      child: const Icon(Icons.public, color: Colors.white54, size: 12),
+                      child: Icon(Icons.public, color: _subtitleColor, size: 12),
                     ),
                   ),
                 )
@@ -1565,8 +1602,8 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
               Expanded(
                 child: Text(
                   serviceResult.serviceName,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: _textColor,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1577,12 +1614,12 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
               
               // Status indicator
               if (serviceResult.status == ServiceSearchStatus.loading)
-                const SizedBox(
+                SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Colors.white54,
+                    color: _subtitleColor,
                   ),
                 )
               else if (serviceResult.status == ServiceSearchStatus.error)
@@ -1594,8 +1631,8 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
               else if (serviceResult.status == ServiceSearchStatus.completed)
                 Text(
                   '${serviceResult.results.length}',
-                  style: const TextStyle(
-                    color: Colors.white70,
+                  style: TextStyle(
+                    color: _subtitleColor,
                     fontSize: 12,
                   ),
                 ),
@@ -1679,12 +1716,12 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                   const SizedBox(width: 8),
                   Text(
                     '${lowQuality.length} lower quality result${lowQuality.length == 1 ? '' : 's'} (<${(_qualityThreshold * 100).round()}%)',
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    style: TextStyle(color: _subtitleColor, fontSize: 12),
                   ),
                   const Spacer(),
                   Icon(
                     isExpanded ? Icons.expand_less : Icons.expand_more,
-                    color: Colors.white54,
+                    color: _subtitleColor,
                     size: 16,
                   ),
                 ],
@@ -1720,16 +1757,16 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                         fit: BoxFit.cover,
                         placeholder: (context, url) => Container(
                           color: Colors.white.withValues(alpha: 0.1),
-                          child: const Icon(Icons.movie, color: Colors.white54, size: 16),
+                          child: Icon(Icons.movie, color: _subtitleColor, size: 16),
                         ),
                         errorWidget: (context, url, error) => Container(
                           color: Colors.white.withValues(alpha: 0.1),
-                          child: const Icon(Icons.movie, color: Colors.white54, size: 16),
+                          child: Icon(Icons.movie, color: _subtitleColor, size: 16),
                         ),
                       )
                     : Container(
                         color: Colors.white.withValues(alpha: 0.1),
-                        child: const Icon(Icons.movie, color: Colors.white54, size: 16),
+                        child: Icon(Icons.movie, color: _subtitleColor, size: 16),
                       ),
               ),
               Positioned(
@@ -1743,8 +1780,8 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                   ),
                   child: Text(
                     '${(similarity * 100).round()}%',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: _textColor,
                       fontSize: 8,
                       fontWeight: FontWeight.bold,
                     ),
@@ -1756,7 +1793,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
           title: Text(
             result.title,
             style: TextStyle(
-              color: isHighQuality ? Colors.white : Colors.white70,
+              color: isHighQuality ? _textColor : _subtitleColor,
               fontSize: 13,
               fontWeight: isHighQuality ? FontWeight.w500 : FontWeight.normal,
             ),
@@ -1766,7 +1803,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
           subtitle: result.href.isNotEmpty 
               ? Text(
                   'Source: ${result.href.split('/').take(3).join('/')}',
-                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  style: TextStyle(color: _subtitleColor.withOpacity(0.8), fontSize: 11),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 )
@@ -1785,7 +1822,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
               const SizedBox(width: 8),
               Icon(
                 Icons.play_arrow,
-                color: isHighQuality ? Colors.blue : Colors.white54,
+                color: isHighQuality ? Colors.blue : _subtitleColor,
                 size: 20,
               ),
             ],
@@ -1908,11 +1945,30 @@ class _StreamingProgressDialogState extends State<StreamingProgressDialog> {
   String _currentStatus = 'Getting episode details...';
   bool _isLoading = true;
   String? _errorMessage;
+  
+  // Adaptive text colors based on dominant color
+  late Color _textColor;
+  late Color _subtitleColor;
 
   @override
   void initState() {
     super.initState();
+    _updateTextColors();
     _startStreamingProcess();
+  }
+  
+  void _updateTextColors() {
+    // Calculate brightness of dominant color
+    final brightness = widget.dominantColor.computeLuminance();
+    
+    // If background is light, use dark text; if dark, use light text
+    if (brightness > 0.5) {
+      _textColor = Colors.black87;
+      _subtitleColor = Colors.black54;
+    } else {
+      _textColor = Colors.white;
+      _subtitleColor = Colors.white70;
+    }
   }
 
   Future<void> _startStreamingProcess() async {
@@ -2026,12 +2082,12 @@ class _StreamingProgressDialogState extends State<StreamingProgressDialog> {
         children: [
           Text(
             'Preparing Stream',
-            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(color: _textColor, fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
           Text(
             widget.result.title,
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
+            style: TextStyle(color: _subtitleColor, fontSize: 14),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -2039,7 +2095,7 @@ class _StreamingProgressDialogState extends State<StreamingProgressDialog> {
             const SizedBox(height: 2),
             Text(
               'S${widget.episode!.seasonNumber}E${widget.episode!.episodeNumber}',
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+              style: TextStyle(color: _subtitleColor, fontSize: 12),
             ),
           ],
         ],
@@ -2050,13 +2106,13 @@ class _StreamingProgressDialogState extends State<StreamingProgressDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (_isLoading) ...[
-              const CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(_textColor),
               ),
               const SizedBox(height: 16),
               Text(
                 _currentStatus,
-                style: const TextStyle(color: Colors.white70),
+                style: TextStyle(color: _subtitleColor),
                 textAlign: TextAlign.center,
               ),
             ] else if (_errorMessage != null) ...[
@@ -2068,7 +2124,7 @@ class _StreamingProgressDialogState extends State<StreamingProgressDialog> {
               const SizedBox(height: 16),
               Text(
                 _errorMessage!,
-                style: const TextStyle(color: Colors.white70),
+                style: TextStyle(color: _subtitleColor),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -2087,7 +2143,7 @@ class _StreamingProgressDialogState extends State<StreamingProgressDialog> {
           },
           child: Text(
             _errorMessage != null ? 'Try Another' : 'Close',
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(color: _textColor),
           ),
         ),
         if (_errorMessage != null)
