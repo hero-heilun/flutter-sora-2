@@ -1368,7 +1368,6 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
       final episodes = await ServiceManager.instance.getEpisodes(result.href);
       
       if (episodes.isEmpty) {
-        print('No episodes found');
         return;
       }
 
@@ -1382,11 +1381,9 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
         );
         targetEpisodeUrl = targetEpisode.href;
         
-        print('TV Show - S${widget.episode!.seasonNumber}E${widget.episode!.episodeNumber} - Using: ${targetEpisode.href}');
       } else {
         // For movies, use first episode/stream
         targetEpisodeUrl = episodes.first.href;
-        print('Movie - Using: ${targetEpisodeUrl}');
       }
 
       // Get stream URL
@@ -1394,15 +1391,9 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
       
       if (streamData != null && streamData.streams.isNotEmpty) {
         final streamUrl = streamData.streams.first.url;
-        print('🔍 DEBUG: StreamData object: $streamData');
-        print('🔍 DEBUG: Stream URL extracted: $streamUrl');
-        print('🔍 DEBUG: Stream URL type: ${streamUrl.runtimeType}');
-        print('🔍 DEBUG: Stream URL length: ${streamUrl.length}');
         
         // Validate that we have a proper URL string, not a JSON object
         if (streamUrl.isEmpty || streamUrl.startsWith('{')) {
-          print('⚠️ ERROR: Invalid stream URL detected: $streamUrl');
-          print('Full streamData for debugging: $streamData');
           throw Exception('Invalid stream URL: Expected URL string but got: $streamUrl');
         }
         
@@ -1426,25 +1417,17 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
         };
         
         final uri = Uri(path: '/video_player', queryParameters: queryParams);
-        print('🔍 DEBUG: Query parameters: $queryParams');
-        print('🔍 DEBUG: Full URI: ${uri.toString()}');
-        print('🔍 DEBUG: URI query: ${uri.query}');
-        print('Navigating to: ${uri.toString()}');
         
         // Use global navigator to ensure navigation works
         final globalContext = navigatorKey.currentContext;
         if (globalContext != null) {
           globalContext.push(uri.toString());
-          print('Navigation completed using global navigator');
         } else {
-          print('Global navigator context is null');
         }
       } else {
-        print('No streams available for this content');
       }
       
     } catch (e) {
-      print('Streaming error: $e');
     }
   }
 

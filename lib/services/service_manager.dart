@@ -247,27 +247,21 @@ class ServiceManager {
 
     final streamMap = await JavaScriptService.instance.extractStreamUrlWithService(url, _activeService!);
     
-    print('🔍 DEBUG SERVICE_MANAGER: Raw streamMap: $streamMap');
-    print('🔍 DEBUG SERVICE_MANAGER: StreamMap type: ${streamMap.runtimeType}');
+    // Stream processing debug info
     
     // Convert Map<String, dynamic> to StreamData
     if (streamMap.isNotEmpty && streamMap['streams'] != null) {
       final streamsList = streamMap['streams'] as List;
-      print('🔍 DEBUG SERVICE_MANAGER: StreamsList: $streamsList');
       final streams = streamsList.map((stream) {
-        print('🔍 DEBUG SERVICE_MANAGER: Processing stream: $stream');
         return StreamSource(
           url: stream['url'] ?? '',
           headers: Map<String, String>.from(stream['headers'] ?? {}),
         );
       }).toList();
-      
-      print('🔍 DEBUG SERVICE_MANAGER: Created StreamData with ${streams.length} streams');
       final streamData = StreamData(
         streams: streams,
         subtitles: List<String>.from(streamMap['subtitles'] ?? []),
       );
-      print('🔍 DEBUG SERVICE_MANAGER: Final StreamData: $streamData');
       return streamData;
     } else if (streamMap['url'] != null) {
       // Handle simple URL case

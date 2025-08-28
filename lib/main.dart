@@ -79,13 +79,8 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: '/video_player',
       builder: (context, state) {
-        print('🔍 DEBUG ROUTER: All query parameters: ${state.uri.queryParameters}');
         final encodedStreamUrl = state.uri.queryParameters['streamUrl'] ?? '';
         final streamUrl = Uri.decodeComponent(encodedStreamUrl);
-        print('🔍 DEBUG ROUTER: Encoded streamUrl: $encodedStreamUrl');
-        print('🔍 DEBUG ROUTER: Decoded streamUrl: $streamUrl');
-        print('🔍 DEBUG ROUTER: StreamUrl type: ${streamUrl.runtimeType}');
-        print('🔍 DEBUG ROUTER: StreamUrl length: ${streamUrl.length}');
         final encodedTitle = state.uri.queryParameters['title'] ?? 'Unknown';
         final title = Uri.decodeComponent(encodedTitle);
         final encodedSubtitle = state.uri.queryParameters['subtitle'];

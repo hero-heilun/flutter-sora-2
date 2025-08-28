@@ -158,10 +158,7 @@ class JavaScriptService {
       // Execute search function in JavaScript
       final result = await _executeSearch(keyword);
       
-      _logger.i('🔍 Result type: ${result.runtimeType}');
-      _logger.i('🔍 Result value: $result');
-      _logger.i('🔍 Is null? ${result == null}');
-      _logger.i('🔍 Is List? ${result is List}');
+      // Debug info removed for cleaner output
       
       // Handle both String and List results
       List<dynamic>? resultList;
@@ -187,7 +184,7 @@ class JavaScriptService {
           imageUrl: item['image'] ?? '',
         )).toList();
       } else {
-        _logger.w('⚠️ No results found - result: $result, type: ${result.runtimeType}');
+        _logger.d('No search results found');
         return [];
       }
 
@@ -217,10 +214,7 @@ class JavaScriptService {
       // Execute search function in JavaScript
       final result = await _executeSearch(keyword);
       
-      _logger.i('🔍 Result type: ${result.runtimeType}');
-      _logger.i('🔍 Result value: $result');
-      _logger.i('🔍 Is null? ${result == null}');
-      _logger.i('🔍 Is List? ${result is List}');
+      // Debug info removed for cleaner output
       
       // Handle both String and List results
       List<dynamic>? resultList;
@@ -246,7 +240,7 @@ class JavaScriptService {
           imageUrl: item['image'] ?? '',
         )).toList();
       } else {
-        _logger.w('⚠️ No results found - result: $result, type: ${result.runtimeType}');
+        _logger.d('No search results found');
         return [];
       }
 
@@ -272,7 +266,7 @@ class JavaScriptService {
       _logger.i('📜 Downloading service script: ${service.sourceName} from $scriptUrl');
       
       final scriptContent = await HttpService.instance.fetchServiceScript(scriptUrl);
-      _logger.i('✅ Script downloaded: ${scriptContent.length} chars');
+      _logger.d('Script downloaded (${scriptContent.length} chars)');
       
       if (scriptContent.trim().isEmpty) {
         throw Exception('Downloaded script is empty from $scriptUrl');
@@ -347,7 +341,7 @@ class JavaScriptService {
 
   Future<dynamic> _executeSearch(String keyword) async {
     try {
-      _logger.i('⚙️ Executing search in JavaScript context');
+      _logger.d('Executing JavaScript search');
 
       // Execute the script that was loaded
       _jsRuntime.evaluate(_currentScript);
@@ -601,7 +595,7 @@ class JavaScriptService {
 
   Future<dynamic> _executeEpisodesExtraction(String detailUrl) async {
     try {
-      _logger.i('⚙️ Executing episodes extraction in JavaScript context');
+      _logger.d('Executing JavaScript episodes extraction');
 
       // Execute the script that was loaded
       _jsRuntime.evaluate(_currentScript);
@@ -671,7 +665,7 @@ class JavaScriptService {
 
   Future<Map<String, dynamic>?> _executeStreamUrlExtraction(String episodeUrl) async {
     try {
-      _logger.i('⚙️ Executing stream URL extraction in JavaScript context');
+      _logger.d('Executing JavaScript stream extraction');
 
       // Execute the script that was loaded
       _jsRuntime.evaluate(_currentScript);
