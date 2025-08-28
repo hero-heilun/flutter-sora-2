@@ -249,6 +249,53 @@ class TMDBService {
     }
   }
 
+  Future<List<TMDBTVShow>> getPopularAnime({int page = 1}) async {
+    if (!_isInitialized) throw Exception('TMDB service not initialized');
+    
+    try {
+      // Anime is identified by genre_id 16 (Animation) and origin_country JP
+      final response = await _dio.get(
+        '/discover/tv',
+        queryParameters: {
+          'page': page,
+          'sort_by': 'popularity.desc',
+          'with_genres': '16', // Animation genre
+          'with_origin_country': 'JP', // Japanese origin
+          'include_adult': false,
+        },
+      );
+      final results = response.data['results'] as List;
+      return results.map((json) => TMDBTVShow.fromJson(json)).toList();
+    } catch (e) {
+      _logger.e('Get popular anime failed: $e');
+      return [];
+    }
+  }
+
+  Future<List<TMDBTVShow>> getTopRatedAnime({int page = 1}) async {
+    if (!_isInitialized) throw Exception('TMDB service not initialized');
+    
+    try {
+      // Anime is identified by genre_id 16 (Animation) and origin_country JP
+      final response = await _dio.get(
+        '/discover/tv',
+        queryParameters: {
+          'page': page,
+          'sort_by': 'vote_average.desc',
+          'vote_count.gte': 100, // Minimum vote count for quality
+          'with_genres': '16', // Animation genre
+          'with_origin_country': 'JP', // Japanese origin
+          'include_adult': false,
+        },
+      );
+      final results = response.data['results'] as List;
+      return results.map((json) => TMDBTVShow.fromJson(json)).toList();
+    } catch (e) {
+      _logger.e('Get top rated anime failed: $e');
+      return [];
+    }
+  }
+
   // Get Movie Details
   Future<TMDBMovieDetail> getMovieDetails(int id) async {
     if (!_isInitialized) throw Exception('TMDB service not initialized');

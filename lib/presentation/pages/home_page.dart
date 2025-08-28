@@ -243,6 +243,21 @@ class _HomeContentState extends ConsumerState<HomeContent> with AutomaticKeepAli
               ),
             ],
 
+            // Popular Anime
+            if (tmdbState.popularAnime.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: _SectionHeader(
+                  title: 'Popular Anime',
+                  onSeeAll: () {
+                    // Navigate to popular anime
+                  },
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: _TVShowList(tvShows: tmdbState.popularAnime),
+              ),
+            ],
+
             // Now Playing
             if (tmdbState.nowPlayingMovies.isNotEmpty) ...[
               SliverToBoxAdapter(
@@ -255,6 +270,36 @@ class _HomeContentState extends ConsumerState<HomeContent> with AutomaticKeepAli
               ),
               SliverToBoxAdapter(
                 child: _MovieList(movies: tmdbState.nowPlayingMovies),
+              ),
+            ],
+
+            // Top Rated TV Shows
+            if (tmdbState.topRatedTVShows.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: _SectionHeader(
+                  title: 'Top Rated TV Shows',
+                  onSeeAll: () {
+                    // Navigate to top rated TV shows
+                  },
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: _TVShowList(tvShows: tmdbState.topRatedTVShows),
+              ),
+            ],
+
+            // Top Rated Anime
+            if (tmdbState.topRatedAnime.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: _SectionHeader(
+                  title: 'Top Rated Anime',
+                  onSeeAll: () {
+                    // Navigate to top rated anime
+                  },
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: _TVShowList(tvShows: tmdbState.topRatedAnime),
               ),
             ],
           ],

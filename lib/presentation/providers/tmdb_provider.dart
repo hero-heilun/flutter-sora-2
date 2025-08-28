@@ -15,6 +15,8 @@ class TMDBState {
   final List<TMDBTVShow> popularTVShows;
   final List<TMDBTVShow> topRatedTVShows;
   final List<TMDBTVShow> trendingTVShows;
+  final List<TMDBTVShow> popularAnime;
+  final List<TMDBTVShow> topRatedAnime;
   final bool isLoading;
   final String? errorMessage;
 
@@ -26,6 +28,8 @@ class TMDBState {
     this.popularTVShows = const [],
     this.topRatedTVShows = const [],
     this.trendingTVShows = const [],
+    this.popularAnime = const [],
+    this.topRatedAnime = const [],
     this.isLoading = false,
     this.errorMessage,
   });
@@ -38,6 +42,8 @@ class TMDBState {
     List<TMDBTVShow>? popularTVShows,
     List<TMDBTVShow>? topRatedTVShows,
     List<TMDBTVShow>? trendingTVShows,
+    List<TMDBTVShow>? popularAnime,
+    List<TMDBTVShow>? topRatedAnime,
     bool? isLoading,
     String? errorMessage,
   }) {
@@ -49,6 +55,8 @@ class TMDBState {
       popularTVShows: popularTVShows ?? this.popularTVShows,
       topRatedTVShows: topRatedTVShows ?? this.topRatedTVShows,
       trendingTVShows: trendingTVShows ?? this.trendingTVShows,
+      popularAnime: popularAnime ?? this.popularAnime,
+      topRatedAnime: topRatedAnime ?? this.topRatedAnime,
       isLoading: isLoading ?? this.isLoading,
       errorMessage: errorMessage,
     );
@@ -82,6 +90,8 @@ class TMDBNotifier extends StateNotifier<TMDBState> {
         TMDBService.instance.getPopularTVShows(),
         TMDBService.instance.getTopRatedTVShows(),
         TMDBService.instance.getTrendingTVShows(),
+        TMDBService.instance.getPopularAnime(),
+        TMDBService.instance.getTopRatedAnime(),
       ]);
 
       print('🎬 API calls completed. Results count:');
@@ -92,6 +102,8 @@ class TMDBNotifier extends StateNotifier<TMDBState> {
       print('  - Popular TV Shows: ${(results[4] as List<TMDBTVShow>).length}');
       print('  - Top Rated TV Shows: ${(results[5] as List<TMDBTVShow>).length}');
       print('  - Trending TV Shows: ${(results[6] as List<TMDBTVShow>).length}');
+      print('  - Popular Anime: ${(results[7] as List<TMDBTVShow>).length}');
+      print('  - Top Rated Anime: ${(results[8] as List<TMDBTVShow>).length}');
 
       final trendingMovies = results[0] as List<TMDBMovie>;
       
@@ -103,6 +115,8 @@ class TMDBNotifier extends StateNotifier<TMDBState> {
         popularTVShows: results[4] as List<TMDBTVShow>,
         topRatedTVShows: results[5] as List<TMDBTVShow>,
         trendingTVShows: results[6] as List<TMDBTVShow>,
+        popularAnime: results[7] as List<TMDBTVShow>,
+        topRatedAnime: results[8] as List<TMDBTVShow>,
         isLoading: false,
       );
       
