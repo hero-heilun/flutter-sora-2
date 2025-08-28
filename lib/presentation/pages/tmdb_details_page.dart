@@ -11,6 +11,8 @@ import '../../services/service_manager.dart';
 import '../providers/tmdb_details_provider.dart';
 import '../providers/app_state_provider.dart';
 import '../../data/models/search_result.dart';
+import '../../services/similarity_algorithm.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class TMDBDetailsPage extends ConsumerStatefulWidget {
   final int id;
@@ -897,6 +899,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
         searchQuery: searchQuery,
         episode: episode,
         dominantColor: _dominantColor,
+        tmdbId: widget.id,
+        isMovie: widget.type == 'movie',
       ),
     );
   }
@@ -906,12 +910,16 @@ class ServiceSearchDialog extends ConsumerStatefulWidget {
   final String searchQuery;
   final TMDBEpisode? episode;
   final Color dominantColor;
+  final int tmdbId;
+  final bool isMovie;
 
   const ServiceSearchDialog({
     super.key,
     required this.searchQuery,
     this.episode,
     required this.dominantColor,
+    required this.tmdbId,
+    required this.isMovie,
   });
 
   @override
@@ -925,12 +933,23 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
     serviceResults: [],
   );
   String? _errorMessage;
+  final Map<String, Set<String>> _expandedServices = {};
+  double _qualityThreshold = 0.9;
+  bool _showingQualityDialog = false;
 
   @override
   void initState() {
     super.initState();
+    _loadQualityThreshold();
     // Delay the search to avoid modifying provider during build
     Future.microtask(() => _performMultiServiceSearch());
+  }
+
+  Future<void> _loadQualityThreshold() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _qualityThreshold = prefs.getDouble('quality_threshold') ?? 0.9;
+    });
   }
 
   Future<void> _performMultiServiceSearch() async {
@@ -1033,6 +1052,32 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
     }
   }
 
+  (List<SearchItem>, List<SearchItem>) _filterResultsByQuality(List<SearchItem> results) {
+    if (results.isEmpty) return ([], []);
+    
+    final resultsWithScores = results.map((result) {
+      final similarity = SimilarityCalculator.calculateSimilarity(widget.searchQuery, result.title);
+      return (result: result, similarity: similarity);
+    }).toList()
+      ..sort((a, b) => b.similarity.compareTo(a.similarity));
+    
+    final highQuality = resultsWithScores
+        .where((item) => item.similarity >= _qualityThreshold)
+        .map((item) => item.result)
+        .toList();
+    
+    final lowQuality = resultsWithScores
+        .where((item) => item.similarity < _qualityThreshold)
+        .map((item) => item.result)
+        .toList();
+    
+    return (highQuality, lowQuality);
+  }
+
+  double _calculateSimilarity(String result) {
+    return SimilarityCalculator.calculateSimilarity(widget.searchQuery, result);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -1065,6 +1110,46 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
         height: 400,
         child: Column(
           children: [
+            // Toolbar
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  PopupMenuButton<SimilarityAlgorithm>(
+                    icon: const Icon(Icons.tune, color: Colors.white70),
+                    onSelected: (algorithm) {
+                      setState(() {
+                        SimilarityCalculator.selectedAlgorithm = algorithm;
+                      });
+                    },
+                    itemBuilder: (context) => SimilarityAlgorithm.values.map((algorithm) => 
+                      PopupMenuItem(
+                        value: algorithm,
+                        child: Row(
+                          children: [
+                            if (SimilarityCalculator.selectedAlgorithm == algorithm)
+                              const Icon(Icons.check, size: 16, color: Colors.green)
+                            else
+                              const SizedBox(width: 16),
+                            const SizedBox(width: 8),
+                            Text(algorithm.displayName),
+                          ],
+                        ),
+                      )
+                    ).toList(),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() => _showingQualityDialog = true),
+                    child: Text(
+                      'Quality: ${(_qualityThreshold * 100).round()}%',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Colors.white24),
             // Progress header
             if (_searchProgress.totalServices > 0) ...[
               Container(
@@ -1183,6 +1268,85 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
           child: const Text('Close', style: TextStyle(color: Colors.white)),
         ),
       ],
+    ).then((_) {
+      // Show quality threshold dialog if requested
+      if (_showingQualityDialog) {
+        _showingQualityDialog = false;
+        _showQualityThresholdDialog();
+      }
+    });
+  }
+
+  Future<void> _showQualityThresholdDialog() async {
+    final TextEditingController controller = TextEditingController(
+      text: (_qualityThreshold * 100).round().toString(),
+    );
+    
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: widget.dominantColor,
+        title: const Text(
+          'Quality Threshold',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Set the minimum similarity score (0-100%) for results to be considered high quality.',
+              style: const TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Enter percentage (e.g., 90)',
+                hintStyle: const TextStyle(color: Colors.white54),
+                suffixText: '%',
+                suffixStyle: const TextStyle(color: Colors.white70),
+                border: OutlineInputBorder(
+                  borderSide: const BorderSide(color: Colors.white54),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: Colors.white54),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: Colors.blue),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final value = int.tryParse(controller.text);
+              if (value != null && value >= 0 && value <= 100) {
+                final newThreshold = value / 100.0;
+                setState(() {
+                  _qualityThreshold = newThreshold;
+                });
+                
+                // Save to preferences
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setDouble('quality_threshold', newThreshold);
+              }
+              Navigator.of(context).pop();
+            },
+            child: const Text('Save', style: TextStyle(color: Colors.blue)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1300,62 +1464,176 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
               ),
             ),
           )
+        else if (serviceResult.status == ServiceSearchStatus.completed)
+          _buildFilteredResults(serviceResult)
         else
-          ...serviceResult.results.map((result) => Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                child: Card(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  child: ListTile(
-                    dense: true,
-                    leading: result.imageUrl.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: result.imageUrl,
-                            width: 50,
-                            height: 70,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => Container(
-                              width: 50,
-                              height: 70,
-                              color: Colors.white.withValues(alpha: 0.1),
-                              child: const Icon(Icons.movie, color: Colors.white54, size: 16),
-                            ),
-                            errorWidget: (context, url, error) => Container(
-                              width: 50,
-                              height: 70,
-                              color: Colors.white.withValues(alpha: 0.1),
-                              child: const Icon(Icons.movie, color: Colors.white54, size: 16),
-                            ),
-                          )
-                        : Container(
-                            width: 50,
-                            height: 70,
-                            color: Colors.white.withValues(alpha: 0.1),
-                            child: const Icon(Icons.movie, color: Colors.white54, size: 16),
-                          ),
-                    title: Text(
-                      result.title,
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: result.href.isNotEmpty 
-                        ? Text(
-                            'Source: ${result.href.split('/').take(3).join('/')}',
-                            style: const TextStyle(color: Colors.white70, fontSize: 11),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          )
-                        : null,
-                    onTap: () async {
-                      // Show loading dialog for streaming process
-                      _showStreamingDialog(context, result);
-                    },
-                  ),
-                ),
-              )),
+          Container(),
         
         const SizedBox(height: 8),
       ],
+    );
+  }
+
+  Widget _buildFilteredResults(ServiceSearchResult serviceResult) {
+    final (highQuality, lowQuality) = _filterResultsByQuality(serviceResult.results);
+    final serviceKey = serviceResult.serviceId;
+    final isExpanded = _expandedServices[serviceKey]?.isNotEmpty ?? false;
+
+    return Column(
+      children: [
+        // High quality results (always visible)
+        ...highQuality.map((result) => _buildResultCard(result, true)),
+        
+        // Low quality results (collapsible)
+        if (lowQuality.isNotEmpty) ...[
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                if (_expandedServices[serviceKey] == null) {
+                  _expandedServices[serviceKey] = <String>{};
+                }
+                if (isExpanded) {
+                  _expandedServices[serviceKey]!.clear();
+                } else {
+                  _expandedServices[serviceKey] = lowQuality.map((r) => r.id).toSet();
+                }
+              });
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber_outlined,
+                    color: Colors.orange[300],
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${lowQuality.length} lower quality result${lowQuality.length == 1 ? '' : 's'} (<${(_qualityThreshold * 100).round()}%)',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    isExpanded ? Icons.expand_less : Icons.expand_more,
+                    color: Colors.white54,
+                    size: 16,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (isExpanded)
+            ...lowQuality.map((result) => _buildResultCard(result, false)),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildResultCard(SearchItem result, bool isHighQuality) {
+    final similarity = _calculateSimilarity(result.title);
+    final scoreColor = isHighQuality ? Colors.green : 
+                      similarity >= 0.75 ? Colors.orange : Colors.red;
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Card(
+        color: Colors.white.withValues(alpha: isHighQuality ? 0.1 : 0.05),
+        child: ListTile(
+          dense: true,
+          leading: Stack(
+            children: [
+              Container(
+                width: 50,
+                height: 70,
+                child: result.imageUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: result.imageUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: Colors.white.withValues(alpha: 0.1),
+                          child: const Icon(Icons.movie, color: Colors.white54, size: 16),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          color: Colors.white.withValues(alpha: 0.1),
+                          child: const Icon(Icons.movie, color: Colors.white54, size: 16),
+                        ),
+                      )
+                    : Container(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        child: const Icon(Icons.movie, color: Colors.white54, size: 16),
+                      ),
+              ),
+              Positioned(
+                top: 2,
+                right: 2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: scoreColor.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '${(similarity * 100).round()}%',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          title: Text(
+            result.title,
+            style: TextStyle(
+              color: isHighQuality ? Colors.white : Colors.white70,
+              fontSize: 13,
+              fontWeight: isHighQuality ? FontWeight.w500 : FontWeight.normal,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: result.href.isNotEmpty 
+              ? Text(
+                  'Source: ${result.href.split('/').take(3).join('/')}',
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                )
+              : null,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: scoreColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.play_arrow,
+                color: isHighQuality ? Colors.blue : Colors.white54,
+                size: 20,
+              ),
+            ],
+          ),
+          onTap: () async {
+            Navigator.of(context).pop(); // Close search dialog first
+            _showStreamingDialog(context, result);
+          },
+        ),
+      ),
     );
   }
 
