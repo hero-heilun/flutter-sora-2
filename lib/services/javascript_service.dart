@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:logger/logger.dart';
 import 'package:flutter_js/flutter_js.dart';
+import 'package:path_provider/path_provider.dart';
 import '../data/models/service_metadata.dart';
 import '../data/models/search_result.dart';
 import 'http_service.dart';
+import 'service_manager.dart';
 
 class JavaScriptService {
   static JavaScriptService? _instance;
@@ -19,6 +22,10 @@ class JavaScriptService {
   final Logger _logger = Logger();
   bool _isInitialized = false;
   String _currentScript = '';
+  bool _isExecuting = false;
+  
+  // Script cache: URL -> script content
+  final Map<String, String> _scriptCache = {};
 
   Future<void> initialize() async {
     _jsRuntime = getJavascriptRuntime();
@@ -133,10 +140,75 @@ class JavaScriptService {
     ''');
   }
 
-  Future<List<SearchItem>> search(String keyword, ServiceMetadata service) async {
+  Future<List<SearchItem>> search(String keyword, Service service) async {
     if (!_isInitialized) await initialize();
 
+    // Wait for any existing execution to complete
+    while (_isExecuting) {
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+
     try {
+      _isExecuting = true;
+      _logger.i('🔍 Searching for "$keyword" using ${service.metadata.sourceName}');
+
+      // Load the service script from local file
+      await _loadServiceScriptFromLocal(service);
+
+      // Execute search function in JavaScript
+      final result = await _executeSearch(keyword);
+      
+      _logger.i('🔍 Result type: ${result.runtimeType}');
+      _logger.i('🔍 Result value: $result');
+      _logger.i('🔍 Is null? ${result == null}');
+      _logger.i('🔍 Is List? ${result is List}');
+      
+      // Handle both String and List results
+      List<dynamic>? resultList;
+      
+      if (result is List) {
+        resultList = result;
+      } else if (result is String && result.isNotEmpty) {
+        try {
+          final decoded = json.decode(result);
+          if (decoded is List) {
+            resultList = decoded;
+          }
+        } catch (e) {
+          _logger.e('❌ Failed to decode search string result: $e');
+        }
+      }
+      
+      if (resultList != null && resultList.isNotEmpty) {
+        _logger.i('✅ Found ${resultList.length} search results');
+        return resultList.map<SearchItem>((item) => SearchItem(
+          title: item['title'] ?? 'Unknown Title',
+          href: item['href'] ?? '',
+          imageUrl: item['image'] ?? '',
+        )).toList();
+      } else {
+        _logger.w('⚠️ No results found - result: $result, type: ${result.runtimeType}');
+        return [];
+      }
+
+    } catch (e) {
+      _logger.e('💥 Search failed: $e');
+      throw Exception('Search failed: $e');
+    } finally {
+      _isExecuting = false;
+    }
+  }
+
+  Future<List<SearchItem>> searchWithMetadata(String keyword, ServiceMetadata service) async {
+    if (!_isInitialized) await initialize();
+
+    // Wait for any existing execution to complete
+    while (_isExecuting) {
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+
+    try {
+      _isExecuting = true;
       _logger.i('🔍 Searching for "$keyword" using ${service.sourceName}');
 
       // Load the service script
@@ -181,22 +253,35 @@ class JavaScriptService {
     } catch (e) {
       _logger.e('💥 Search failed: $e');
       throw Exception('Search failed: $e');
+    } finally {
+      _isExecuting = false;
     }
   }
 
   Future<void> _loadServiceScript(ServiceMetadata service) async {
     try {
-      _logger.i('📜 Loading service script: ${service.scriptUrl}');
+      final scriptUrl = service.scriptUrl;
       
-      final scriptContent = await HttpService.instance.fetchServiceScript(service.scriptUrl);
+      // Check if script is already cached
+      if (_scriptCache.containsKey(scriptUrl)) {
+        _currentScript = _scriptCache[scriptUrl]!;
+        _logger.i('📜 Using cached script for ${service.sourceName} (${_currentScript.length} chars)');
+        return;
+      }
+      
+      _logger.i('📜 Downloading service script: ${service.sourceName} from $scriptUrl');
+      
+      final scriptContent = await HttpService.instance.fetchServiceScript(scriptUrl);
       _logger.i('✅ Script downloaded: ${scriptContent.length} chars');
       
       if (scriptContent.trim().isEmpty) {
-        throw Exception('Downloaded script is empty from ${service.scriptUrl}');
+        throw Exception('Downloaded script is empty from $scriptUrl');
       }
       
+      // Cache the script content
+      _scriptCache[scriptUrl] = scriptContent;
       _currentScript = scriptContent;
-      _logger.i('📜 Script loaded successfully');
+      _logger.i('📜 Script cached and loaded successfully for ${service.sourceName}');
       
     } catch (e) {
       _logger.e('💥 Failed to load service script: $e');
@@ -204,6 +289,61 @@ class JavaScriptService {
     }
   }
 
+  Future<void> _loadServiceScriptFromLocal(Service service) async {
+    try {
+      final scriptUrl = service.metadata.scriptUrl;
+      
+      // Check if script is already cached
+      if (_scriptCache.containsKey(scriptUrl)) {
+        _currentScript = _scriptCache[scriptUrl]!;
+        _logger.i('📜 Using cached script for ${service.metadata.sourceName} (${_currentScript.length} chars)');
+        return;
+      }
+      
+      // Try to load from local file first
+      final documentsDir = await getApplicationDocumentsDirectory();
+      final serviceDir = Directory('${documentsDir.path}/Services/${service.localPath}');
+      final scriptFile = File('${serviceDir.path}/script.js');
+      
+      if (await scriptFile.exists()) {
+        final scriptContent = await scriptFile.readAsString();
+        if (scriptContent.trim().isNotEmpty) {
+          // Cache the script content
+          _scriptCache[scriptUrl] = scriptContent;
+          _currentScript = scriptContent;
+          _logger.i('📜 Loaded script from local file for ${service.metadata.sourceName} (${scriptContent.length} chars)');
+          return;
+        } else {
+          _logger.w('⚠️ Local script file is empty for ${service.metadata.sourceName}');
+        }
+      } else {
+        _logger.w('⚠️ Local script file not found for ${service.metadata.sourceName}: ${scriptFile.path}');
+      }
+      
+      // Fallback to network download if local file doesn't exist or is empty
+      _logger.i('📜 Fallback: Downloading script from network for ${service.metadata.sourceName}');
+      await _loadServiceScript(service.metadata);
+      
+    } catch (e) {
+      _logger.e('💥 Failed to load service script from local: $e');
+      // Final fallback to network
+      try {
+        await _loadServiceScript(service.metadata);
+      } catch (networkError) {
+        throw Exception('Failed to load script both locally and from network: Local: $e, Network: $networkError');
+      }
+    }
+  }
+
+  // Cache management methods
+  void clearScriptCache() {
+    _scriptCache.clear();
+    _logger.i('🗑️ Script cache cleared');
+  }
+  
+  int get cachedScriptsCount => _scriptCache.length;
+  
+  List<String> get cachedScriptUrls => _scriptCache.keys.toList();
 
   Future<dynamic> _executeSearch(String keyword) async {
     try {
@@ -368,13 +508,19 @@ class JavaScriptService {
     }
   }
 
-  Future<List<EpisodeLink>> extractEpisodesWithService(String detailUrl, ServiceMetadata service) async {
+  Future<List<EpisodeLink>> extractEpisodesWithService(String detailUrl, Service service) async {
     if (!_isInitialized) await initialize();
 
+    // Wait for any existing execution to complete
+    while (_isExecuting) {
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+
     try {
+      _isExecuting = true;
       _logger.i('📺 Extracting episodes from $detailUrl');
       
-      await _loadServiceScript(service);
+      await _loadServiceScriptFromLocal(service);
       
       // Execute extractEpisodes function in JavaScript
       final result = await _executeEpisodesExtraction(detailUrl);
@@ -413,16 +559,24 @@ class JavaScriptService {
     } catch (e) {
       _logger.e('💥 Extract episodes failed: $e');
       throw Exception('Extract episodes failed: $e');
+    } finally {
+      _isExecuting = false;
     }
   }
 
-  Future<Map<String, dynamic>> extractStreamUrlWithService(String episodeUrl, ServiceMetadata service) async {
+  Future<Map<String, dynamic>> extractStreamUrlWithService(String episodeUrl, Service service) async {
     if (!_isInitialized) await initialize();
 
+    // Wait for any existing execution to complete
+    while (_isExecuting) {
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+
     try {
+      _isExecuting = true;
       _logger.i('🎬 Extracting stream URL from $episodeUrl');
       
-      await _loadServiceScript(service);
+      await _loadServiceScriptFromLocal(service);
       
       // Execute extractStreamUrl function in JavaScript
       final result = await _executeStreamUrlExtraction(episodeUrl);
@@ -440,6 +594,8 @@ class JavaScriptService {
     } catch (e) {
       _logger.e('💥 Extract stream URL failed: $e');
       throw Exception('Extract stream URL failed: $e');
+    } finally {
+      _isExecuting = false;
     }
   }
 

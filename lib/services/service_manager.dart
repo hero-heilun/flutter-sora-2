@@ -209,7 +209,7 @@ class ServiceManager {
       throw Exception('No active service');
     }
 
-    return await JavaScriptService.instance.search(keyword, _activeService!.metadata);
+    return await JavaScriptService.instance.search(keyword, _activeService!);
   }
 
   // Multi-service search for find episode functionality
@@ -219,8 +219,8 @@ class ServiceManager {
       orElse: () => throw Exception('Service not found: $serviceId'),
     );
 
-    // Use the new search method with service metadata directly (loads script from URL)
-    return await JavaScriptService.instance.search(keyword, service.metadata);
+    // Use the new search method with service directly (loads script from local file)
+    return await JavaScriptService.instance.search(keyword, service);
   }
 
   Future<List<MediaItem>> getDetails(String url) async {
@@ -237,7 +237,7 @@ class ServiceManager {
       throw Exception('No active service');
     }
 
-    return await JavaScriptService.instance.extractEpisodesWithService(url, _activeService!.metadata);
+    return await JavaScriptService.instance.extractEpisodesWithService(url, _activeService!);
   }
 
   Future<StreamData?> getStreamUrl(String url) async {
@@ -245,7 +245,7 @@ class ServiceManager {
       throw Exception('No active service');
     }
 
-    final streamMap = await JavaScriptService.instance.extractStreamUrlWithService(url, _activeService!.metadata);
+    final streamMap = await JavaScriptService.instance.extractStreamUrlWithService(url, _activeService!);
     
     print('🔍 DEBUG SERVICE_MANAGER: Raw streamMap: $streamMap');
     print('🔍 DEBUG SERVICE_MANAGER: StreamMap type: ${streamMap.runtimeType}');
