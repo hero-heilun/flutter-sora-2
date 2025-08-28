@@ -32,27 +32,42 @@ class SimilarityCalculator {
     final cleanOriginal = _cleanString(original);
     final cleanResult = _cleanString(result);
     
-    if (cleanOriginal.isEmpty || cleanResult.isEmpty) return 0.0;
-    if (cleanOriginal == cleanResult) return 1.0;
-
-    switch (_selectedAlgorithm) {
-      case SimilarityAlgorithm.levenshteinDistance:
-        return _levenshteinSimilarity(cleanOriginal, cleanResult);
-      case SimilarityAlgorithm.jaroWinkler:
-        return _jaroWinklerSimilarity(cleanOriginal, cleanResult);
-      case SimilarityAlgorithm.cosine:
-        return _cosineSimilarity(cleanOriginal, cleanResult);
-      case SimilarityAlgorithm.fuzzy:
-        return _fuzzySimilarity(cleanOriginal, cleanResult);
+    // Debug logging
+    print('🔍 Similarity Debug:');
+    print('  Original: "$original" -> "$cleanOriginal"');
+    print('  Result: "$result" -> "$cleanResult"');
+    
+    if (cleanOriginal.isEmpty || cleanResult.isEmpty) {
+      print('  ❌ Empty strings detected, returning 0.0');
+      return 0.0;
     }
+    
+    if (cleanOriginal == cleanResult) {
+      print('  ✅ Exact match, returning 1.0');
+      return 1.0;
+    }
+
+    final similarity = switch (_selectedAlgorithm) {
+      SimilarityAlgorithm.levenshteinDistance => _levenshteinSimilarity(cleanOriginal, cleanResult),
+      SimilarityAlgorithm.jaroWinkler => _jaroWinklerSimilarity(cleanOriginal, cleanResult),
+      SimilarityAlgorithm.cosine => _cosineSimilarity(cleanOriginal, cleanResult),
+      SimilarityAlgorithm.fuzzy => _fuzzySimilarity(cleanOriginal, cleanResult),
+    };
+    
+    print('  📊 ${_selectedAlgorithm.displayName} similarity: $similarity');
+    return similarity;
   }
 
   static String _cleanString(String input) {
-    return input
+    // For Chinese characters, we need to be more careful with the regex
+    final result = input
         .toLowerCase()
-        .replaceAll(RegExp(r'[^\w\s]'), '')
+        .replaceAll(RegExp(r'[^\w\s\u4e00-\u9fff]'), '') // Include Chinese characters
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+    
+    print('    Clean: "$input" -> "$result"');
+    return result;
   }
 
   static double _levenshteinSimilarity(String a, String b) {
