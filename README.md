@@ -3,7 +3,7 @@
 Cross-platform streaming app with JavaScript service support.
 
 ## Preview
-![](home.png)
+![](/image/home.png)
 
 ## Features
 
