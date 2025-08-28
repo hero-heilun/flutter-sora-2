@@ -1347,11 +1347,8 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                           )
                         : null,
                     onTap: () async {
-                      // Close the search dialog immediately
-                      Navigator.of(context).pop();
-                      
-                      // Start streaming process directly without passing context
-                      await _handleStreamingDirectly(result);
+                      // Show loading dialog for streaming process
+                      _showStreamingDialog(context, result);
                     },
                   ),
                 ),
@@ -1359,6 +1356,22 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
         
         const SizedBox(height: 8),
       ],
+    );
+  }
+
+  void _showStreamingDialog(BuildContext context, SearchItem result) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StreamingProgressDialog(
+        result: result,
+        episode: widget.episode,
+        dominantColor: widget.dominantColor,
+        onComplete: () {
+          // Close the search dialog
+          Navigator.of(context).pop();
+        },
+      ),
     );
   }
 
@@ -1431,4 +1444,223 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
     }
   }
 
+}
+
+class StreamingProgressDialog extends StatefulWidget {
+  final SearchItem result;
+  final TMDBEpisode? episode;
+  final Color dominantColor;
+  final VoidCallback onComplete;
+
+  const StreamingProgressDialog({
+    super.key,
+    required this.result,
+    this.episode,
+    required this.dominantColor,
+    required this.onComplete,
+  });
+
+  @override
+  State<StreamingProgressDialog> createState() => _StreamingProgressDialogState();
+}
+
+class _StreamingProgressDialogState extends State<StreamingProgressDialog> {
+  String _currentStatus = 'Getting episode details...';
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _startStreamingProcess();
+  }
+
+  Future<void> _startStreamingProcess() async {
+    try {
+      setState(() {
+        _currentStatus = 'Getting episode details...';
+        _isLoading = true;
+        _errorMessage = null;
+      });
+
+      // Get episode details from the service
+      final episodes = await ServiceManager.instance.getEpisodes(widget.result.href);
+      
+      if (episodes.isEmpty) {
+        setState(() {
+          _errorMessage = 'No episodes found for this content';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _currentStatus = 'Finding target episode...';
+      });
+
+      String targetEpisodeUrl;
+      
+      if (widget.episode != null) {
+        // For TV shows, find the specific episode
+        final targetEpisode = episodes.firstWhere(
+          (ep) => ep.number == widget.episode!.episodeNumber,
+          orElse: () => episodes.first,
+        );
+        targetEpisodeUrl = targetEpisode.href;
+      } else {
+        // For movies, use first episode/stream
+        targetEpisodeUrl = episodes.first.href;
+      }
+
+      setState(() {
+        _currentStatus = 'Getting stream URL...';
+      });
+
+      // Get stream URL
+      final streamData = await ServiceManager.instance.getStreamUrl(targetEpisodeUrl);
+      
+      if (streamData != null && streamData.streams.isNotEmpty) {
+        final streamUrl = streamData.streams.first.url;
+        
+        // Validate that we have a proper URL string, not a JSON object
+        if (streamUrl.isEmpty || streamUrl.startsWith('{')) {
+          throw Exception('Invalid stream URL format');
+        }
+
+        setState(() {
+          _currentStatus = 'Launching video player...';
+        });
+
+        // Build episode title if available
+        String? episodeTitle;
+        if (widget.episode != null) {
+          episodeTitle = 'S${widget.episode!.seasonNumber}E${widget.episode!.episodeNumber}';
+          if (widget.episode!.name?.isNotEmpty == true) {
+            episodeTitle += ' - ${widget.episode!.name}';
+          }
+        }
+        
+        // Navigate to video player
+        final encodedStreamUrl = Uri.encodeComponent(streamUrl);
+        
+        final queryParams = <String, String>{
+          'streamUrl': encodedStreamUrl,
+          'title': Uri.encodeComponent(widget.result.title),
+          if (episodeTitle != null) 'episodeTitle': Uri.encodeComponent(episodeTitle),
+        };
+        
+        final uri = Uri(path: '/video_player', queryParameters: queryParams);
+        
+        // Use global navigator to ensure navigation works
+        final globalContext = navigatorKey.currentContext;
+        if (globalContext != null) {
+          globalContext.push(uri.toString());
+          
+          // Close dialogs after successful navigation
+          Navigator.of(context).pop(); // Close streaming dialog
+          widget.onComplete(); // Close search dialog
+        } else {
+          throw Exception('Unable to navigate - no global context');
+        }
+      } else {
+        setState(() {
+          _errorMessage = 'No streams available for this content';
+          _isLoading = false;
+        });
+      }
+      
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: widget.dominantColor,
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Preparing Stream',
+            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            widget.result.title,
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (widget.episode != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              'S${widget.episode!.seasonNumber}E${widget.episode!.episodeNumber}',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isLoading) ...[
+              const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _currentStatus,
+                style: const TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+            ] else if (_errorMessage != null) ...[
+              const Icon(
+                Icons.error_outline,
+                color: Colors.redAccent,
+                size: 48,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _errorMessage!,
+                style: const TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: _isLoading ? [] : [
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).pop(); // Close streaming dialog
+            if (_errorMessage != null) {
+              // Don't close search dialog if there was an error
+              return;
+            }
+            widget.onComplete(); // Close search dialog
+          },
+          child: Text(
+            _errorMessage != null ? 'Try Another' : 'Close',
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+        if (_errorMessage != null)
+          TextButton(
+            onPressed: () {
+              _startStreamingProcess(); // Retry
+            },
+            child: const Text(
+              'Retry',
+              style: TextStyle(color: Colors.blue),
+            ),
+          ),
+      ],
+    );
+  }
 }
