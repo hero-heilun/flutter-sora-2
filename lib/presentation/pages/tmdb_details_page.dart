@@ -1481,7 +1481,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
   Widget _buildFilteredResults(ServiceSearchResult serviceResult) {
     final (highQuality, lowQuality) = _filterResultsByQuality(serviceResult.results);
     final serviceKey = serviceResult.serviceId;
-    final isExpanded = _expandedServices[serviceKey]?.isNotEmpty ?? false;
+    final isExpanded = _expandedServices[serviceKey] != null;
 
     return Column(
       children: [
@@ -1490,19 +1490,19 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
         
         // Low quality results (collapsible)
         if (lowQuality.isNotEmpty) ...[
-          GestureDetector(
+          InkWell(
             onTap: () {
               setState(() {
-                if (_expandedServices[serviceKey] == null) {
-                  _expandedServices[serviceKey] = <String>{};
-                }
                 if (isExpanded) {
-                  _expandedServices[serviceKey]!.clear();
+                  // Collapse - remove the key entirely
+                  _expandedServices.remove(serviceKey);
                 } else {
+                  // Expand - add the key with result IDs
                   _expandedServices[serviceKey] = lowQuality.map((r) => r.id ?? '').where((id) => id.isNotEmpty).toSet();
                 }
               });
             },
+            borderRadius: BorderRadius.circular(8),
             child: Container(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
