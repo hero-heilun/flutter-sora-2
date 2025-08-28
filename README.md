@@ -2,6 +2,9 @@
 
 Cross-platform streaming app with JavaScript service support.
 
+## Preview
+![](home.png)
+
 ## Features
 
 - **Cross-platform**: Runs on iOS, Android, macOS, Windows, and Linux
