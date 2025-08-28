@@ -6,10 +6,12 @@ import 'package:go_router/go_router.dart';
 import '../../main.dart';
 import '../../data/models/tmdb_models.dart';
 import '../../data/models/service_search_result.dart';
+import '../../data/models/library_models.dart';
 import '../../services/tmdb_service.dart';
 import '../../services/service_manager.dart';
 import '../providers/tmdb_details_provider.dart';
 import '../providers/app_state_provider.dart';
+import '../providers/library_provider.dart';
 import '../../data/models/search_result.dart';
 import '../../services/similarity_algorithm.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +21,8 @@ class TMDBDetailsPage extends ConsumerStatefulWidget {
   final String type; // 'movie' or 'tv'
   final String title;
   final String? posterPath;
+  final int? highlightSeasonNumber;
+  final int? highlightEpisodeNumber;
 
   const TMDBDetailsPage({
     super.key,
@@ -26,6 +30,8 @@ class TMDBDetailsPage extends ConsumerStatefulWidget {
     required this.type,
     required this.title,
     this.posterPath,
+    this.highlightSeasonNumber,
+    this.highlightEpisodeNumber,
   });
 
   @override
@@ -58,6 +64,21 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
       detailsNotifier.loadMovieDetails(widget.id);
     } else {
       detailsNotifier.loadTVShowDetails(widget.id);
+      
+      // If we need to highlight a specific episode, auto-select that season
+      if (widget.highlightSeasonNumber != null && widget.highlightEpisodeNumber != null) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          final currentState = ref.read(tmdbDetailsProvider);
+          if (currentState.tvShowDetail != null) {
+            detailsNotifier.selectSeason(widget.id, widget.highlightSeasonNumber!);
+            
+            // Auto-scroll to episodes section after season is loaded
+            Future.delayed(const Duration(milliseconds: 1000), () {
+              _scrollToEpisodesSection();
+            });
+          }
+        });
+      }
     }
   }
 
@@ -207,21 +228,7 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
             onPressed: () => Navigator.of(context).pop(),
           ),
           actions: [
-            IconButton(
-              icon: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Icon(Icons.bookmark_border, color: Colors.white, size: 20),
-              ),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Bookmark functionality coming soon...')),
-                );
-              },
-            ),
+            _buildFavoriteButton(state),
           ],
           flexibleSpace: FlexibleSpaceBar(
             background: Stack(
@@ -348,6 +355,53 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildFavoriteButton(TMDBDetailsState state) {
+    final libraryState = ref.watch(libraryProvider);
+    final libraryNotifier = ref.read(libraryProvider.notifier);
+    
+    final movieDetail = state.movieDetail;
+    final tvShowDetail = state.tvShowDetail;
+    
+    if (movieDetail == null && tvShowDetail == null) {
+      return const SizedBox.shrink();
+    }
+    
+    final isMovie = movieDetail != null;
+    final id = isMovie ? movieDetail.id.toString() : tvShowDetail!.id.toString();
+    final type = isMovie ? 'movie' : 'tv';
+    final isFavorite = libraryNotifier.isFavorite(id, type);
+    
+    return IconButton(
+      icon: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Icon(
+          isFavorite ? Icons.favorite : Icons.favorite_border,
+          color: isFavorite ? Colors.red : Colors.white,
+          size: 20,
+        ),
+      ),
+      onPressed: () async {
+        if (isMovie) {
+          await libraryNotifier.toggleMovieDetailFavorite(movieDetail);
+        } else {
+          await libraryNotifier.toggleTVShowDetailFavorite(tvShowDetail!);
+        }
+        
+        final action = isFavorite ? 'Removed from' : 'Added to';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$action favorites'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
     );
   }
 
@@ -636,14 +690,20 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
       itemCount: seasonDetail.episodes.length,
       itemBuilder: (context, index) {
         final episode = seasonDetail.episodes[index];
+        final isHighlighted = _isEpisodeHighlighted(episode);
         return GestureDetector(
           onTap: () => _onEpisodeTap(episode),
           child: Container(
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.3),
+              color: isHighlighted 
+                  ? Colors.orange.withOpacity(0.3)
+                  : Colors.black.withOpacity(0.3),
               borderRadius: BorderRadius.circular(8),
+              border: isHighlighted 
+                  ? Border.all(color: Colors.orange, width: 2)
+                  : null,
             ),
             child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -702,13 +762,37 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      episode.name ?? 'Episode ${episode.episodeNumber}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            episode.name ?? 'Episode ${episode.episodeNumber}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (isHighlighted) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.orange,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'Continue',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     if (episode.overview?.isNotEmpty == true) ...[
                       const SizedBox(height: 4),
@@ -853,12 +937,17 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
 
   void _handlePlayContent(BuildContext context) {
     final detailsState = ref.read(tmdbDetailsProvider);
+    final libraryNotifier = ref.read(libraryProvider.notifier);
     String searchQuery = '';
     
     if (widget.type == 'movie' && detailsState.movieDetail != null) {
       searchQuery = detailsState.movieDetail!.title;
+      // Add to watch history
+      _addToWatchHistory(detailsState.movieDetail!, null);
     } else if (widget.type == 'tv' && detailsState.tvShowDetail != null) {
       searchQuery = detailsState.tvShowDetail!.name;
+      // Add to watch history
+      _addToWatchHistory(null, detailsState.tvShowDetail!);
     }
     
     if (searchQuery.isNotEmpty) {
@@ -876,6 +965,8 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
     
     if (detailsState.tvShowDetail != null) {
       searchQuery = detailsState.tvShowDetail!.name;
+      // Add to watch history with episode info
+      _addToWatchHistory(null, detailsState.tvShowDetail!, episode: episode);
     }
     
     if (searchQuery.isNotEmpty) {
@@ -887,6 +978,73 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Unable to determine show to search for')),
+      );
+    }
+  }
+
+  void _addToWatchHistory(TMDBMovieDetail? movie, TMDBTVShowDetail? tvShow, {TMDBEpisode? episode}) {
+    final libraryNotifier = ref.read(libraryProvider.notifier);
+    
+    if (movie != null) {
+      final watchHistoryItem = WatchHistoryItem(
+        id: movie.id.toString(),
+        title: movie.title,
+        type: 'movie',
+        posterPath: movie.posterPath,
+        lastWatched: DateTime.now(),
+        progress: 0,
+        duration: movie.runtime ?? 0,
+        metadata: {
+          'tmdb_id': movie.id,
+          'title': movie.title,
+          'release_date': movie.releaseDate,
+          'vote_average': movie.voteAverage,
+        },
+      );
+      libraryNotifier.addToWatchHistory(watchHistoryItem);
+    } else if (tvShow != null) {
+      final watchHistoryItem = WatchHistoryItem(
+        id: tvShow.id.toString(),
+        title: tvShow.name,
+        type: 'tv',
+        posterPath: tvShow.posterPath,
+        lastWatched: DateTime.now(),
+        progress: 0,
+        duration: episode?.runtime ?? 0,
+        episodeTitle: episode?.name,
+        episodeNumber: episode?.episodeNumber,
+        seasonNumber: episode?.seasonNumber,
+        metadata: {
+          'tmdb_id': tvShow.id,
+          'name': tvShow.name,
+          'first_air_date': tvShow.firstAirDate,
+          'vote_average': tvShow.voteAverage,
+          if (episode != null) ...{
+            'episode_id': episode.id,
+            'episode_name': episode.name,
+            'episode_number': episode.episodeNumber,
+            'season_number': episode.seasonNumber,
+            'air_date': episode.airDate,
+          },
+        },
+      );
+      libraryNotifier.addToWatchHistory(watchHistoryItem);
+    }
+  }
+
+  bool _isEpisodeHighlighted(TMDBEpisode episode) {
+    return widget.highlightSeasonNumber != null &&
+           widget.highlightEpisodeNumber != null &&
+           episode.seasonNumber == widget.highlightSeasonNumber &&
+           episode.episodeNumber == widget.highlightEpisodeNumber;
+  }
+
+  void _scrollToEpisodesSection() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent * 0.8, // Scroll to near the bottom where episodes are
+        duration: const Duration(milliseconds: 800),
+        curve: Curves.easeInOut,
       );
     }
   }

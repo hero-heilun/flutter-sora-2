@@ -10,6 +10,9 @@ import '../../core/theme/accent_color_manager.dart';
 import '../providers/library_provider.dart';
 import 'search_page.dart';
 import 'settings_page.dart';
+import 'library_favorites_page.dart';
+import 'library_watch_history_page.dart';
+import 'library_bookmarks_page.dart';
 import '../../services/javascript_service.dart';
 
 class HomePage extends StatefulWidget {
@@ -118,29 +121,6 @@ class _HomeContentState extends ConsumerState<HomeContent> with AutomaticKeepAli
         ),
         child: CustomScrollView(
           slivers: [
-            // Test button for debugging
-            SliverToBoxAdapter(
-              child: Container(
-                margin: const EdgeInsets.all(16),
-                child: ElevatedButton(
-                  onPressed: () async {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Testing Iyinghua service...')),
-                    );
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Test completed - check logs!')),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('TEST IYINGHUA SERVICE'),
-                ),
-              ),
-            ),
             // Hero Featured Content
             if (_heroContent != null)
               SliverToBoxAdapter(
@@ -588,7 +568,12 @@ class LibraryContent extends ConsumerWidget {
                     icon: Icons.favorite,
                     count: libraryState.favorites.length,
                     onTap: () {
-                      // Navigate to favorites view
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const LibraryFavoritesPage(),
+                        ),
+                      );
                     },
                   ),
                   const SizedBox(height: 16),
@@ -650,7 +635,12 @@ class LibraryContent extends ConsumerWidget {
                     icon: Icons.history,
                     count: libraryState.watchHistory.length,
                     onTap: () {
-                      // Navigate to watch history
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const LibraryWatchHistoryPage(),
+                        ),
+                      );
                     },
                   ),
                   const SizedBox(height: 16),
@@ -668,69 +658,81 @@ class LibraryContent extends ConsumerWidget {
                               ? historyItem.progress / historyItem.duration 
                               : 0.0;
                               
-                          return Container(
-                            width: 160,
-                            margin: const EdgeInsets.only(right: 12),
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: Stack(
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: CachedNetworkImage(
-                                          imageUrl: historyItem.posterPath != null
-                                              ? TMDBService.instance.getPosterUrl(historyItem.posterPath!)
-                                              : '',
-                                          fit: BoxFit.cover,
-                                          width: double.infinity,
-                                          placeholder: (context, url) => Container(
-                                            color: Colors.grey[300],
-                                            child: const Icon(Icons.movie),
-                                          ),
-                                          errorWidget: (context, url, error) => Container(
-                                            color: Colors.grey[300],
-                                            child: const Icon(Icons.movie),
-                                          ),
-                                        ),
-                                      ),
-                                      if (progress > 0)
-                                        Positioned(
-                                          bottom: 0,
-                                          left: 0,
-                                          right: 0,
-                                          child: Container(
-                                            height: 3,
-                                            child: LinearProgressIndicator(
-                                              value: progress,
-                                              backgroundColor: Colors.black54,
-                                              valueColor: AlwaysStoppedAnimation<Color>(
-                                                Theme.of(context).primaryColor,
-                                              ),
+                          return GestureDetector(
+                            onTap: () {
+                              String route = '/tmdb/${historyItem.type}/${historyItem.id}?title=${Uri.encodeComponent(historyItem.title)}&posterPath=${Uri.encodeComponent(historyItem.posterPath ?? '')}';
+                              
+                              // Add season and episode parameters for TV shows
+                              if (historyItem.type == 'tv' && historyItem.seasonNumber != null && historyItem.episodeNumber != null) {
+                                route += '&seasonNumber=${historyItem.seasonNumber}&episodeNumber=${historyItem.episodeNumber}';
+                              }
+                              
+                              context.push(route);
+                            },
+                            child: Container(
+                              width: 160,
+                              margin: const EdgeInsets.only(right: 12),
+                              child: Column(
+                                children: [
+                                  Expanded(
+                                    child: Stack(
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: CachedNetworkImage(
+                                            imageUrl: historyItem.posterPath != null
+                                                ? TMDBService.instance.getPosterUrl(historyItem.posterPath!)
+                                                : '',
+                                            fit: BoxFit.cover,
+                                            width: double.infinity,
+                                            placeholder: (context, url) => Container(
+                                              color: Colors.grey[300],
+                                              child: const Icon(Icons.movie),
+                                            ),
+                                            errorWidget: (context, url, error) => Container(
+                                              color: Colors.grey[300],
+                                              child: const Icon(Icons.movie),
                                             ),
                                           ),
                                         ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  historyItem.title,
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (historyItem.episodeTitle != null)
-                                  Text(
-                                    historyItem.episodeTitle!,
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.grey,
-                                      fontSize: 10,
+                                        if (progress > 0)
+                                          Positioned(
+                                            bottom: 0,
+                                            left: 0,
+                                            right: 0,
+                                            child: Container(
+                                              height: 3,
+                                              child: LinearProgressIndicator(
+                                                value: progress,
+                                                backgroundColor: Colors.black54,
+                                                valueColor: AlwaysStoppedAnimation<Color>(
+                                                  Theme.of(context).primaryColor,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
                                     ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    historyItem.title,
+                                    style: Theme.of(context).textTheme.bodySmall,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                              ],
+                                  if (historyItem.episodeTitle != null)
+                                    Text(
+                                      historyItem.episodeTitle!,
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Colors.grey,
+                                        fontSize: 10,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
+                              ),
                             ),
                           );
                         },
@@ -745,7 +747,12 @@ class LibraryContent extends ConsumerWidget {
                     icon: Icons.bookmark,
                     count: libraryState.bookmarks.length,
                     onTap: () {
-                      // Navigate to bookmarks
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const LibraryBookmarksPage(),
+                        ),
+                      );
                     },
                   ),
                   

@@ -47,11 +47,19 @@ final GoRouter _router = GoRouter(
         final id = int.parse(state.pathParameters['id']!);
         final title = state.uri.queryParameters['title'] ?? '';
         final posterPath = state.uri.queryParameters['posterPath'];
+        final seasonNumber = state.uri.queryParameters['seasonNumber'] != null 
+            ? int.tryParse(state.uri.queryParameters['seasonNumber']!) 
+            : null;
+        final episodeNumber = state.uri.queryParameters['episodeNumber'] != null 
+            ? int.tryParse(state.uri.queryParameters['episodeNumber']!) 
+            : null;
         return TMDBDetailsPage(
           id: id,
           type: type,
           title: title,
           posterPath: posterPath,
+          highlightSeasonNumber: seasonNumber,
+          highlightEpisodeNumber: episodeNumber,
         );
       },
     ),

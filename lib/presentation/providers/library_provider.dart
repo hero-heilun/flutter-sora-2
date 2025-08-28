@@ -156,6 +156,27 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     }
   }
 
+  // Convenience methods for TMDB detail items
+  Future<void> toggleMovieDetailFavorite(TMDBMovieDetail movieDetail) async {
+    final favoriteItem = FavoriteItem.fromTMDBMovieDetail(movieDetail);
+    
+    if (isFavorite(movieDetail.id.toString(), 'movie')) {
+      await removeFromFavorites(movieDetail.id.toString(), 'movie');
+    } else {
+      await addToFavorites(favoriteItem);
+    }
+  }
+
+  Future<void> toggleTVShowDetailFavorite(TMDBTVShowDetail tvShowDetail) async {
+    final favoriteItem = FavoriteItem.fromTMDBTVShowDetail(tvShowDetail);
+    
+    if (isFavorite(tvShowDetail.id.toString(), 'tv')) {
+      await removeFromFavorites(tvShowDetail.id.toString(), 'tv');
+    } else {
+      await addToFavorites(favoriteItem);
+    }
+  }
+
   // Watch history management
   Future<void> addToWatchHistory(WatchHistoryItem item) async {
     final history = [...state.watchHistory];

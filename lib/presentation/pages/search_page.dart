@@ -59,10 +59,10 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
   Widget build(BuildContext context) {
     super.build(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
-        title: const Text('Search', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF121212),
+        title: const Text('Search'),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        foregroundColor: Theme.of(context).textTheme.titleLarge?.color,
         elevation: 0,
         automaticallyImplyLeading: false,
       ),
@@ -73,13 +73,13 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
             padding: const EdgeInsets.all(16.0),
             child: TextField(
               controller: _searchController,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
               decoration: InputDecoration(
                 hintText: 'Search for movies and TV shows...',
-                hintStyle: const TextStyle(color: Colors.white54),
-                prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                hintStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6)),
+                prefixIcon: Icon(Icons.search, color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6)),
                 suffixIcon: IconButton(
-                  icon: const Icon(Icons.clear, color: Colors.white54),
+                  icon: Icon(Icons.clear, color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6)),
                   onPressed: () {
                     _searchController.clear();
                     setState(() {
@@ -89,14 +89,16 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
                   },
                 ),
                 filled: true,
-                fillColor: Colors.white.withOpacity(0.1),
+                fillColor: Theme.of(context).brightness == Brightness.dark 
+                    ? Colors.white.withOpacity(0.1)
+                    : Colors.grey.withOpacity(0.1),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.blue, width: 2),
+                  borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
                 ),
               ),
               onSubmitted: _performSearch,
@@ -123,13 +125,15 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
-                          color: _selectedTab == 'movies' ? Colors.blue : Colors.transparent,
+                          color: _selectedTab == 'movies' ? Theme.of(context).primaryColor : Colors.transparent,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           'Movies (${_movieResults.length})',
                           style: TextStyle(
-                            color: _selectedTab == 'movies' ? Colors.white : Colors.white70,
+                            color: _selectedTab == 'movies' 
+                                ? Colors.white 
+                                : Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.7),
                             fontWeight: FontWeight.w600,
                           ),
                           textAlign: TextAlign.center,
@@ -144,13 +148,15 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
-                          color: _selectedTab == 'tv' ? Colors.blue : Colors.transparent,
+                          color: _selectedTab == 'tv' ? Theme.of(context).primaryColor : Colors.transparent,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           'TV Shows (${_tvResults.length})',
                           style: TextStyle(
-                            color: _selectedTab == 'tv' ? Colors.white : Colors.white70,
+                            color: _selectedTab == 'tv' 
+                                ? Colors.white 
+                                : Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.7),
                             fontWeight: FontWeight.w600,
                           ),
                           textAlign: TextAlign.center,
@@ -167,24 +173,24 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
           // Content area
           Expanded(
             child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: Colors.blue),
+                ? Center(
+                    child: CircularProgressIndicator(color: Theme.of(context).primaryColor),
                   )
                 : _movieResults.isEmpty && _tvResults.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(
                               Icons.search,
                               size: 64,
-                              color: Colors.white24,
+                              color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.3),
                             ),
-                            SizedBox(height: 16),
+                            const SizedBox(height: 16),
                             Text(
                               'Search for movies and TV shows',
                               style: TextStyle(
-                                color: Colors.white54,
+                                color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6),
                                 fontSize: 16,
                               ),
                             ),
@@ -205,7 +211,10 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
       return Center(
         child: Text(
           'No ${_selectedTab == 'movies' ? 'movies' : 'TV shows'} found',
-          style: const TextStyle(color: Colors.white54, fontSize: 16),
+          style: TextStyle(
+            color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6), 
+            fontSize: 16,
+          ),
         ),
       );
     }
@@ -239,7 +248,9 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          color: Colors.white.withOpacity(0.05),
+          color: Theme.of(context).brightness == Brightness.dark 
+              ? Colors.white.withOpacity(0.05)
+              : Colors.grey.withOpacity(0.1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -253,19 +264,43 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
                         fit: BoxFit.cover,
                         width: double.infinity,
                         placeholder: (context, url) => Container(
-                          color: Colors.white.withOpacity(0.1),
-                          child: const Center(
-                            child: CircularProgressIndicator(color: Colors.blue),
+                          width: double.infinity,
+                          height: double.infinity,
+                          color: Theme.of(context).brightness == Brightness.dark 
+                              ? Colors.white.withOpacity(0.1)
+                              : Colors.grey.withOpacity(0.2),
+                          child: Center(
+                            child: CircularProgressIndicator(color: Theme.of(context).primaryColor),
                           ),
                         ),
                         errorWidget: (context, url, error) => Container(
-                          color: Colors.white.withOpacity(0.1),
-                          child: const Icon(Icons.movie, color: Colors.white54, size: 40),
+                          width: double.infinity,
+                          height: double.infinity,
+                          color: Theme.of(context).brightness == Brightness.dark 
+                              ? Colors.white.withOpacity(0.1)
+                              : Colors.grey.withOpacity(0.2),
+                          child: Center(
+                            child: Icon(
+                              Icons.movie, 
+                              color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6), 
+                              size: 40,
+                            ),
+                          ),
                         ),
                       )
                     : Container(
-                        color: Colors.white.withOpacity(0.1),
-                        child: const Icon(Icons.movie, color: Colors.white54, size: 40),
+                        width: double.infinity,
+                        height: double.infinity,
+                        color: Theme.of(context).brightness == Brightness.dark 
+                            ? Colors.white.withOpacity(0.1)
+                            : Colors.grey.withOpacity(0.2),
+                        child: Center(
+                          child: Icon(
+                            Icons.movie, 
+                            color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6), 
+                            size: 40,
+                          ),
+                        ),
                       ),
               ),
             ),
@@ -276,8 +311,8 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
                 children: [
                   Text(
                     movie.title,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.titleMedium?.color,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -292,14 +327,20 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
                         const SizedBox(width: 2),
                         Text(
                           movie.voteAverage.toStringAsFixed(1),
-                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          style: TextStyle(
+                            color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.8), 
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                       if (movie.releaseDate?.isNotEmpty == true) ...[
                         const Spacer(),
                         Text(
                           movie.releaseDate!.substring(0, 4),
-                          style: const TextStyle(color: Colors.white54, fontSize: 12),
+                          style: TextStyle(
+                            color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.6), 
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ],
@@ -321,7 +362,9 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          color: Colors.white.withOpacity(0.05),
+          color: Theme.of(context).brightness == Brightness.dark 
+              ? Colors.white.withOpacity(0.05)
+              : Colors.grey.withOpacity(0.1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -335,19 +378,43 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
                         fit: BoxFit.cover,
                         width: double.infinity,
                         placeholder: (context, url) => Container(
-                          color: Colors.white.withOpacity(0.1),
-                          child: const Center(
-                            child: CircularProgressIndicator(color: Colors.blue),
+                          width: double.infinity,
+                          height: double.infinity,
+                          color: Theme.of(context).brightness == Brightness.dark 
+                              ? Colors.white.withOpacity(0.1)
+                              : Colors.grey.withOpacity(0.2),
+                          child: Center(
+                            child: CircularProgressIndicator(color: Theme.of(context).primaryColor),
                           ),
                         ),
                         errorWidget: (context, url, error) => Container(
-                          color: Colors.white.withOpacity(0.1),
-                          child: const Icon(Icons.tv, color: Colors.white54, size: 40),
+                          width: double.infinity,
+                          height: double.infinity,
+                          color: Theme.of(context).brightness == Brightness.dark 
+                              ? Colors.white.withOpacity(0.1)
+                              : Colors.grey.withOpacity(0.2),
+                          child: Center(
+                            child: Icon(
+                              Icons.tv, 
+                              color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6), 
+                              size: 40,
+                            ),
+                          ),
                         ),
                       )
                     : Container(
-                        color: Colors.white.withOpacity(0.1),
-                        child: const Icon(Icons.tv, color: Colors.white54, size: 40),
+                        width: double.infinity,
+                        height: double.infinity,
+                        color: Theme.of(context).brightness == Brightness.dark 
+                            ? Colors.white.withOpacity(0.1)
+                            : Colors.grey.withOpacity(0.2),
+                        child: Center(
+                          child: Icon(
+                            Icons.tv, 
+                            color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.6), 
+                            size: 40,
+                          ),
+                        ),
                       ),
               ),
             ),
@@ -358,8 +425,8 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
                 children: [
                   Text(
                     tvShow.name,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.titleMedium?.color,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -374,14 +441,20 @@ class _SearchPageState extends ConsumerState<SearchPage> with AutomaticKeepAlive
                         const SizedBox(width: 2),
                         Text(
                           tvShow.voteAverage.toStringAsFixed(1),
-                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          style: TextStyle(
+                            color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.8), 
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                       if (tvShow.firstAirDate?.isNotEmpty == true) ...[
                         const Spacer(),
                         Text(
                           tvShow.firstAirDate!.substring(0, 4),
-                          style: const TextStyle(color: Colors.white54, fontSize: 12),
+                          style: TextStyle(
+                            color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.6), 
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ],

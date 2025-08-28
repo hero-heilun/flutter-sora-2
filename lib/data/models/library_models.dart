@@ -70,6 +70,61 @@ class FavoriteItem with _$FavoriteItem {
       },
     );
   }
+
+  factory FavoriteItem.fromTMDBMovieDetail(TMDBMovieDetail movieDetail) {
+    return FavoriteItem(
+      id: movieDetail.id.toString(),
+      title: movieDetail.title,
+      type: 'movie',
+      posterPath: movieDetail.posterPath,
+      overview: movieDetail.overview,
+      rating: movieDetail.voteAverage,
+      addedAt: DateTime.now(),
+      tmdbData: {
+        'id': movieDetail.id,
+        'title': movieDetail.title,
+        'original_title': movieDetail.originalTitle,
+        'overview': movieDetail.overview,
+        'poster_path': movieDetail.posterPath,
+        'backdrop_path': movieDetail.backdropPath,
+        'release_date': movieDetail.releaseDate,
+        'vote_average': movieDetail.voteAverage,
+        'vote_count': movieDetail.voteCount,
+        'genre_ids': movieDetail.genres?.map((g) => g.id).toList() ?? [],
+        'adult': movieDetail.adult,
+        'popularity': movieDetail.popularity,
+        'runtime': movieDetail.runtime,
+      },
+    );
+  }
+
+  factory FavoriteItem.fromTMDBTVShowDetail(TMDBTVShowDetail tvShowDetail) {
+    return FavoriteItem(
+      id: tvShowDetail.id.toString(),
+      title: tvShowDetail.name,
+      type: 'tv',
+      posterPath: tvShowDetail.posterPath,
+      overview: tvShowDetail.overview,
+      rating: tvShowDetail.voteAverage,
+      addedAt: DateTime.now(),
+      tmdbData: {
+        'id': tvShowDetail.id,
+        'name': tvShowDetail.name,
+        'original_name': tvShowDetail.originalName,
+        'overview': tvShowDetail.overview,
+        'poster_path': tvShowDetail.posterPath,
+        'backdrop_path': tvShowDetail.backdropPath,
+        'first_air_date': tvShowDetail.firstAirDate,
+        'last_air_date': tvShowDetail.lastAirDate,
+        'vote_average': tvShowDetail.voteAverage,
+        'vote_count': tvShowDetail.voteCount,
+        'genre_ids': tvShowDetail.genres?.map((g) => g.id).toList() ?? [],
+        'origin_country': tvShowDetail.originCountry,
+        'number_of_episodes': tvShowDetail.numberOfEpisodes,
+        'number_of_seasons': tvShowDetail.numberOfSeasons,
+      },
+    );
+  }
 }
 
 @freezed
