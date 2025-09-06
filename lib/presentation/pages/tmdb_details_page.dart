@@ -251,22 +251,51 @@ class _TMDBDetailsPageState extends ConsumerState<TMDBDetailsPage> {
           flexibleSpace: FlexibleSpaceBar(
             background: Stack(
               children: [
-                // Background image
+                // Background image with adaptive cropping
                 if (backdropPath != null && backdropPath.isNotEmpty)
                   Positioned.fill(
-                    child: CachedNetworkImage(
-                      imageUrl: TMDBService.instance.getBackdropUrl(backdropPath, size: 'w1280'),
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        color: _dominantColor.withOpacity(0.7),
-                        child: const Center(child: CircularProgressIndicator()),
-                      ),
-                      errorWidget: (context, url, error) => Container(
-                        color: _dominantColor.withOpacity(0.7),
-                        child: const Center(
-                          child: Icon(Icons.movie, color: Colors.white, size: 80),
+                    child: Stack(
+                      children: [
+                        // Background layer (slightly blurred and darkened for seamless edges)
+                        Positioned.fill(
+                          child: ColorFiltered(
+                            colorFilter: ColorFilter.mode(
+                              Colors.black.withOpacity(0.4),
+                              BlendMode.darken,
+                            ),
+                            child: CachedNetworkImage(
+                              imageUrl: TMDBService.instance.getBackdropUrl(backdropPath, size: 'w780'),
+                              fit: BoxFit.cover,
+                            ),
+                          ),
                         ),
-                      ),
+                        // Main image with smart cropping
+                        Positioned.fill(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              // For most movie backdrops (16:9 or wider), use fitWidth
+                              // For taller images, use fitHeight
+                              final aspectRatio = constraints.maxWidth / constraints.maxHeight;
+                              
+                              return CachedNetworkImage(
+                                imageUrl: TMDBService.instance.getBackdropUrl(backdropPath, size: 'w1280'),
+                                fit: aspectRatio > 1.5 ? BoxFit.fitWidth : BoxFit.cover,
+                                alignment: Alignment.topCenter,
+                                placeholder: (context, url) => Container(
+                                  color: _dominantColor.withOpacity(0.7),
+                                  child: const Center(child: CircularProgressIndicator()),
+                                ),
+                                errorWidget: (context, url, error) => Container(
+                                  color: _dominantColor.withOpacity(0.7),
+                                  child: const Center(
+                                    child: Icon(Icons.movie, color: Colors.white, size: 80),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 // Gradient overlay
@@ -1714,11 +1743,14 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
                     size: 16,
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    '${lowQuality.length} lower quality result${lowQuality.length == 1 ? '' : 's'} (<${(_qualityThreshold * 100).round()}%)',
-                    style: TextStyle(color: _subtitleColor, fontSize: 12),
+                  Expanded(
+                    child: Text(
+                      '${lowQuality.length} lower quality result${lowQuality.length == 1 ? '' : 's'} (<${(_qualityThreshold * 100).round()}%)',
+                      style: TextStyle(color: _subtitleColor, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   Icon(
                     isExpanded ? Icons.expand_less : Icons.expand_more,
                     color: _subtitleColor,
