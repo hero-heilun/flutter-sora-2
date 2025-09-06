@@ -2,6 +2,8 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // Add JitPack for JavaScriptCore runtime
+        maven { url = uri("https://jitpack.io") }
     }
 }
 

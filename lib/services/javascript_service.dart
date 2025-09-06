@@ -28,10 +28,16 @@ class JavaScriptService {
   final Map<String, String> _scriptCache = {};
 
   Future<void> initialize() async {
-    _jsRuntime = getJavascriptRuntime();
+    // Use JavaScriptCore on Android for better performance
+    _jsRuntime = getJavascriptRuntime(
+      forceJavascriptCoreOnAndroid: true,
+      extraArgs: {
+        'stackSize': 2048 * 1024, // Backup option for QuickJS if JSCore fails
+      }
+    );
     _setupJavaScriptEnvironment();
     _isInitialized = true;
-    _logger.i('JavaScript service initialized');
+    _logger.i('JavaScript service initialized with ${Platform.isAndroid ? "JavaScriptCore" : "platform default"} engine');
   }
 
   void _setupJavaScriptEnvironment() {
@@ -334,6 +340,18 @@ class JavaScriptService {
     _scriptCache.clear();
     _logger.i('🗑️ Script cache cleared');
   }
+
+  void clearScriptCacheForUrl(String scriptUrl) {
+    if (_scriptCache.containsKey(scriptUrl)) {
+      _scriptCache.remove(scriptUrl);
+      _logger.i('🗑️ Script cache cleared for URL: $scriptUrl');
+    }
+  }
+
+  void clearScriptCacheForService(Service service) {
+    final scriptUrl = service.metadata.scriptUrl;
+    clearScriptCacheForUrl(scriptUrl);
+  }
   
   int get cachedScriptsCount => _scriptCache.length;
   
@@ -380,9 +398,12 @@ class JavaScriptService {
         })();
       ''');
 
-      // Poll for completion
-      for (int i = 0; i < 300; i++) { // 30 seconds timeout
-        await Future.delayed(const Duration(milliseconds: 100));
+      // Poll for completion - with JavaScriptCore, Android should perform similarly to other platforms
+      final maxIterations = 400; // 40 seconds timeout for all platforms
+      final pollInterval = 100; // 100ms polling interval
+      
+      for (int i = 0; i < maxIterations; i++) {
+        await Future.delayed(Duration(milliseconds: pollInterval));
         
         final completeResult = _jsRuntime.evaluate('searchPromiseComplete');
         if (completeResult.stringResult == 'true') {
@@ -421,7 +442,7 @@ class JavaScriptService {
         }
       }
       
-      _logger.w('⏰ Search timed out after 30 seconds');
+      _logger.w('⏰ Search timed out after 40 seconds');
       return [];
     } catch (e) {
       _logger.e('❌ Search execution failed: $e');
@@ -627,9 +648,12 @@ class JavaScriptService {
         })();
       ''');
 
-      // Poll for completion
-      for (int i = 0; i < 300; i++) { // 30 seconds timeout
-        await Future.delayed(const Duration(milliseconds: 100));
+      // Poll for completion - unified timeout with JavaScriptCore
+      final maxIterations = 400; // 40 seconds
+      final pollInterval = 100; // 100ms
+      
+      for (int i = 0; i < maxIterations; i++) {
+        await Future.delayed(Duration(milliseconds: pollInterval));
         
         final completeResult = _jsRuntime.evaluate('episodesPromiseComplete');
         if (completeResult.stringResult == 'true') {
@@ -697,9 +721,12 @@ class JavaScriptService {
         })();
       ''');
 
-      // Poll for completion
-      for (int i = 0; i < 600; i++) { // 60 seconds timeout for streaming
-        await Future.delayed(const Duration(milliseconds: 100));
+      // Poll for completion - unified timeout for streaming with JavaScriptCore
+      final maxIterations = 600; // 60 seconds for streaming operations
+      final pollInterval = 100; // 100ms
+      
+      for (int i = 0; i < maxIterations; i++) {
+        await Future.delayed(Duration(milliseconds: pollInterval));
         
         final completeResult = _jsRuntime.evaluate('streamPromiseComplete');
         if (completeResult.stringResult == 'true') {

@@ -141,11 +141,14 @@ class TMDBService {
   }
 
   // Discover methods
-  Future<List<TMDBMovie>> getTrendingMovies({String timeWindow = 'week'}) async {
+  Future<List<TMDBMovie>> getTrendingMovies({String timeWindow = 'week', int page = 1}) async {
     if (!_isInitialized) throw Exception('TMDB service not initialized');
     
     try {
-      final response = await _dio.get('/trending/movie/$timeWindow');
+      final response = await _dio.get(
+        '/trending/movie/$timeWindow',
+        queryParameters: {'page': page},
+      );
       final results = response.data['results'] as List;
       print('📊 TRENDING movies API results count: ${results.length}');
       return results.map((json) => TMDBMovie.fromJson(json)).toList();
@@ -155,11 +158,14 @@ class TMDBService {
     }
   }
 
-  Future<List<TMDBTVShow>> getTrendingTVShows({String timeWindow = 'week'}) async {
+  Future<List<TMDBTVShow>> getTrendingTVShows({String timeWindow = 'week', int page = 1}) async {
     if (!_isInitialized) throw Exception('TMDB service not initialized');
     
     try {
-      final response = await _dio.get('/trending/tv/$timeWindow');
+      final response = await _dio.get(
+        '/trending/tv/$timeWindow',
+        queryParameters: {'page': page},
+      );
       final results = response.data['results'] as List;
       return results.map((json) => TMDBTVShow.fromJson(json)).toList();
     } catch (e) {
@@ -332,6 +338,104 @@ class TMDBService {
     } catch (e) {
       _logger.e('Get season details failed: $e');
       throw Exception('Failed to load season details: $e');
+    }
+  }
+
+  // Paginated content methods for category lists
+  Future<List<TMDBMovie>> getCategoryMovies(String category, {int page = 1}) async {
+    if (!_isInitialized) throw Exception('TMDB service not initialized');
+    
+    try {
+      late Response response;
+      
+      switch (category) {
+        case 'trending':
+          response = await _dio.get(
+            '/trending/movie/week',
+            queryParameters: {'page': page},
+          );
+          break;
+        case 'popular':
+          response = await _dio.get(
+            '/movie/popular',
+            queryParameters: {'page': page},
+          );
+          break;
+        case 'top_rated':
+          response = await _dio.get(
+            '/movie/top_rated',
+            queryParameters: {'page': page},
+          );
+          break;
+        case 'now_playing':
+          response = await _dio.get(
+            '/movie/now_playing',
+            queryParameters: {'page': page},
+          );
+          break;
+        default:
+          throw Exception('Unknown movie category: $category');
+      }
+      
+      final results = response.data['results'] as List;
+      return results.map((json) => TMDBMovie.fromJson(json)).toList();
+    } catch (e) {
+      _logger.e('Get category movies failed for $category: $e');
+      return [];
+    }
+  }
+  
+  Future<List<TMDBTVShow>> getCategoryTVShows(String category, {int page = 1}) async {
+    if (!_isInitialized) throw Exception('TMDB service not initialized');
+    
+    try {
+      late Response response;
+      
+      switch (category) {
+        case 'popular':
+          response = await _dio.get(
+            '/tv/popular',
+            queryParameters: {'page': page},
+          );
+          break;
+        case 'top_rated':
+          response = await _dio.get(
+            '/tv/top_rated',
+            queryParameters: {'page': page},
+          );
+          break;
+        case 'popular_anime':
+          response = await _dio.get(
+            '/discover/tv',
+            queryParameters: {
+              'page': page,
+              'with_genres': '16', // Animation genre
+              'with_origin_country': 'JP', // Japanese origin
+              'sort_by': 'popularity.desc',
+            },
+          );
+          break;
+        case 'top_rated_anime':
+          response = await _dio.get(
+            '/discover/tv',
+            queryParameters: {
+              'page': page,
+              'with_genres': '16', // Animation genre
+              'with_origin_country': 'JP', // Japanese origin
+              'sort_by': 'vote_average.desc',
+              'vote_count.gte': 100, // At least 100 votes
+            },
+          );
+          break;
+        default:
+          throw Exception('Unknown TV show category: $category');
+      }
+      
+      final results = response.data['results'] as List;
+      return results.map((json) => TMDBTVShow.fromJson(json)).toList();
+    } catch (e) {
+      _logger.e('Get category TV shows failed for $category: $e');
+      return [];
     }
   }
 

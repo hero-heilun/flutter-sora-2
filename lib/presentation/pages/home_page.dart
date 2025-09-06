@@ -13,7 +13,7 @@ import 'settings_page.dart';
 import 'library_favorites_page.dart';
 import 'library_watch_history_page.dart';
 import 'library_bookmarks_page.dart';
-import '../../services/javascript_service.dart';
+import 'category_list_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -127,12 +127,33 @@ class _HomeContentState extends ConsumerState<HomeContent> with AutomaticKeepAli
                 child: FeaturedCard(
                   movie: _heroContent,
                   height: 500,
+                  isFavorite: ref.watch(libraryProvider).favorites.any((item) => 
+                    item.id == _heroContent!.id.toString() && item.type == 'movie'),
                   onDominantColorChange: (color) {
                     final ambientColor = accentColorManager.generateAmbientColor(color);
                     accentColorManager.setAmbientColor(ambientColor);
                   },
-                  onTap: () {
-                    // Navigate to details
+                  onWatchNow: () {
+                    // Navigate to TMDB details page for watching
+                    if (_heroContent != null) {
+                      context.push(
+                        '/tmdb/movie/${_heroContent!.id}?title=${Uri.encodeComponent(_heroContent!.title)}&posterPath=${Uri.encodeComponent(_heroContent!.posterPath ?? '')}',
+                      );
+                    }
+                  },
+                  onFavorite: () {
+                    // Toggle favorite
+                    if (_heroContent != null) {
+                      ref.read(libraryProvider.notifier).toggleMovieFavorite(_heroContent!);
+                    }
+                  },
+                  onInfo: () {
+                    // Navigate to details page  
+                    if (_heroContent != null) {
+                      context.push(
+                        '/tmdb/movie/${_heroContent!.id}?title=${Uri.encodeComponent(_heroContent!.title)}&posterPath=${Uri.encodeComponent(_heroContent!.posterPath ?? '')}',
+                      );
+                    }
                   },
                 ),
               ),
@@ -189,7 +210,7 @@ class _HomeContentState extends ConsumerState<HomeContent> with AutomaticKeepAli
                 child: _SectionHeader(
                   title: 'Trending This Week',
                   onSeeAll: () {
-                    // Navigate to trending movies
+                    context.push('/category/${CategoryType.trendingMovies.name}');
                   },
                 ),
               ),
@@ -204,7 +225,7 @@ class _HomeContentState extends ConsumerState<HomeContent> with AutomaticKeepAli
                 child: _SectionHeader(
                   title: 'Popular Movies',
                   onSeeAll: () {
-                    // Navigate to popular movies
+                    context.push('/category/${CategoryType.popularMovies.name}');
                   },
                 ),
               ),
@@ -219,7 +240,7 @@ class _HomeContentState extends ConsumerState<HomeContent> with AutomaticKeepAli
                 child: _SectionHeader(
                   title: 'Top Rated Movies',
                   onSeeAll: () {
-                    // Navigate to top rated movies
+                    context.push('/category/${CategoryType.topRatedMovies.name}');
                   },
                 ),
               ),
@@ -234,7 +255,7 @@ class _HomeContentState extends ConsumerState<HomeContent> with AutomaticKeepAli
                 child: _SectionHeader(
                   title: 'Popular TV Shows',
                   onSeeAll: () {
-                    // Navigate to popular TV shows
+                    context.push('/category/${CategoryType.popularTVShows.name}');
                   },
                 ),
               ),
@@ -249,7 +270,7 @@ class _HomeContentState extends ConsumerState<HomeContent> with AutomaticKeepAli
                 child: _SectionHeader(
                   title: 'Popular Anime',
                   onSeeAll: () {
-                    // Navigate to popular anime
+                    context.push('/category/${CategoryType.popularAnime.name}');
                   },
                 ),
               ),
@@ -264,7 +285,7 @@ class _HomeContentState extends ConsumerState<HomeContent> with AutomaticKeepAli
                 child: _SectionHeader(
                   title: 'Now Playing',
                   onSeeAll: () {
-                    // Navigate to now playing movies
+                    context.push('/category/${CategoryType.nowPlayingMovies.name}');
                   },
                 ),
               ),
@@ -279,7 +300,7 @@ class _HomeContentState extends ConsumerState<HomeContent> with AutomaticKeepAli
                 child: _SectionHeader(
                   title: 'Top Rated TV Shows',
                   onSeeAll: () {
-                    // Navigate to top rated TV shows
+                    context.push('/category/${CategoryType.topRatedTVShows.name}');
                   },
                 ),
               ),
@@ -294,7 +315,7 @@ class _HomeContentState extends ConsumerState<HomeContent> with AutomaticKeepAli
                 child: _SectionHeader(
                   title: 'Top Rated Anime',
                   onSeeAll: () {
-                    // Navigate to top rated anime
+                    context.push('/category/${CategoryType.topRatedAnime.name}');
                   },
                 ),
               ),

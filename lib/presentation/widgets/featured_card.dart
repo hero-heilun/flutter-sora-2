@@ -8,16 +8,22 @@ class FeaturedCard extends StatefulWidget {
   final TMDBMovie? movie;
   final TMDBTVShow? tvShow;
   final double height;
+  final bool isFavorite;
   final Function(Color)? onDominantColorChange;
-  final VoidCallback? onTap;
+  final VoidCallback? onWatchNow;
+  final VoidCallback? onFavorite;
+  final VoidCallback? onInfo;
 
   const FeaturedCard({
     super.key,
     this.movie,
     this.tvShow,
     this.height = 500,
+    this.isFavorite = false,
     this.onDominantColorChange,
-    this.onTap,
+    this.onWatchNow,
+    this.onFavorite,
+    this.onInfo,
   });
 
   @override
@@ -72,7 +78,7 @@ class _FeaturedCardState extends State<FeaturedCard> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: widget.onTap,
+      onTap: widget.onInfo,
       child: Container(
         height: widget.height,
         child: Stack(
@@ -188,7 +194,7 @@ class _FeaturedCardState extends State<FeaturedCard> {
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: widget.onTap,
+                          onPressed: widget.onWatchNow,
                           icon: const Icon(Icons.play_arrow),
                           label: const Text('Watch Now'),
                           style: ElevatedButton.styleFrom(
@@ -212,12 +218,10 @@ class _FeaturedCardState extends State<FeaturedCard> {
                           ),
                         ),
                         child: IconButton(
-                          onPressed: () {
-                            // Add to favorites functionality
-                          },
-                          icon: const Icon(
-                            Icons.favorite_border,
-                            color: Colors.white,
+                          onPressed: widget.onFavorite,
+                          icon: Icon(
+                            widget.isFavorite ? Icons.favorite : Icons.favorite_border,
+                            color: widget.isFavorite ? Colors.red : Colors.white,
                           ),
                         ),
                       ),
@@ -232,9 +236,7 @@ class _FeaturedCardState extends State<FeaturedCard> {
                           ),
                         ),
                         child: IconButton(
-                          onPressed: () {
-                            // Show more info
-                          },
+                          onPressed: widget.onInfo,
                           icon: const Icon(
                             Icons.info_outline,
                             color: Colors.white,

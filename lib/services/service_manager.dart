@@ -187,6 +187,9 @@ class ServiceManager {
   Future<void> removeService(String serviceId) async {
     final service = _services.firstWhere((s) => s.id == serviceId);
     
+    // Clear JavaScript cache for this service
+    JavaScriptService.instance.clearScriptCacheForService(service);
+    
     // Remove local files
     final serviceDir = Directory('${_servicesDirectory.path}/${service.localPath}');
     if (await serviceDir.exists()) {

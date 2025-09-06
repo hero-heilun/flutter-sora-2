@@ -9,6 +9,9 @@ import 'presentation/pages/tmdb_details_page.dart';
 import 'presentation/pages/player_page.dart';
 import 'presentation/pages/video_player_page.dart';
 import 'presentation/pages/settings_page.dart';
+import 'presentation/pages/services_manager_page.dart';
+import 'presentation/pages/bulk_import_page.dart';
+import 'presentation/pages/category_list_page.dart';
 import 'services/service_manager.dart';
 import 'services/javascript_service.dart';
 import 'services/http_service.dart';
@@ -106,6 +109,25 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsPage(),
+    ),
+    GoRoute(
+      path: '/services-manager',
+      builder: (context, state) => const ServicesManagerPage(),
+    ),
+    GoRoute(
+      path: '/bulk-import',
+      builder: (context, state) => const BulkImportPage(),
+    ),
+    GoRoute(
+      path: '/category/:categoryType',
+      builder: (context, state) {
+        final categoryTypeString = state.pathParameters['categoryType']!;
+        final categoryType = CategoryType.values.firstWhere(
+          (e) => e.name == categoryTypeString,
+          orElse: () => CategoryType.popularMovies,
+        );
+        return CategoryListPage(categoryType: categoryType);
+      },
     ),
   ],
 );
