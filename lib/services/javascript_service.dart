@@ -178,9 +178,9 @@ class JavaScriptService {
             body: body
           };
           
-          console.log('Sending fetchv2 request:', requestData);
+          console.log('Sending fetchv2 request (stringified):', JSON.stringify(requestData));
           console.log('sendMessage function exists:', typeof sendMessage !== 'undefined');
-          sendMessage('fetchv2_request', requestData);
+          sendMessage('fetchv2_request', JSON.stringify(requestData));
         });
       }
     ''');
