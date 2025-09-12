@@ -18,43 +18,56 @@ class JavaScriptService {
 
   JavaScriptService._internal();
 
-  late JavascriptRuntime _jsRuntime;
   final Logger _logger = Logger();
   bool _isInitialized = false;
   String _currentScript = '';
-  bool _isExecuting = false;
+  
+  // Service-specific JavaScript runtime environments to prevent script conflicts
+  final Map<String, JavascriptRuntime> _serviceRuntimes = {};
   
   // Script cache: URL -> script content
   final Map<String, String> _scriptCache = {};
+  
 
   Future<void> initialize() async {
-    // Use JavaScriptCore on Android for better performance
-    _jsRuntime = getJavascriptRuntime(
-      forceJavascriptCoreOnAndroid: true,
-      extraArgs: {
-        'stackSize': 2048 * 1024, // Backup option for QuickJS if JSCore fails
-      }
-    );
-    _setupJavaScriptEnvironment();
     _isInitialized = true;
-    _logger.i('JavaScript service initialized with ${Platform.isAndroid ? "JavaScriptCore" : "platform default"} engine');
+    _logger.i('JavaScript service initialized - runtimes will be created per service');
+  }
+  
+  // Get or create a service-specific JavaScript runtime
+  JavascriptRuntime _getServiceRuntime(String serviceId) {
+    if (!_serviceRuntimes.containsKey(serviceId)) {
+      _logger.i('Creating new JavaScript runtime for service: $serviceId');
+      final runtime = getJavascriptRuntime(
+        forceJavascriptCoreOnAndroid: true,
+        extraArgs: {
+          'stackSize': 2048 * 1024,
+        }
+      );
+      _setupJavaScriptEnvironmentForRuntime(runtime);
+      _serviceRuntimes[serviceId] = runtime;
+    }
+    return _serviceRuntimes[serviceId]!;
   }
 
-  void _setupJavaScriptEnvironment() {
-    // Use a simpler approach - directly implement fetchv2 with a global callback mechanism
-    final Map<String, Completer<String>> _pendingRequests = {};
-    int _requestId = 0;
-    
-    // Set up fetchv2 message handler for real HTTP requests
-    _jsRuntime.onMessage('fetchv2_request', (dynamic args) async {
+  void _setupJavaScriptEnvironmentForRuntime(JavascriptRuntime jsRuntime) {
+    // Set up fetchv2 message handler for this specific runtime
+    _logger.i('🔧 Setting up fetchv2_request handler for runtime');
+    jsRuntime.onMessage('fetchv2_request', (dynamic args) async {
+      _logger.i('🌟 fetchv2_request message handler triggered!');
       try {
         _logger.i('🌐 fetchv2 request received: ${args.toString()}');
         // args is already a Map, not a JSON string
         Map<String, dynamic> requestData;
         if (args is String) {
+          _logger.i('🔧 Received string args, parsing JSON');
           requestData = json.decode(args);
-        } else {
+        } else if (args is Map) {
+          _logger.i('🔧 Received Map args directly');
           requestData = Map<String, dynamic>.from(args);
+        } else {
+          _logger.e('🔧 Unexpected args type: ${args.runtimeType}');
+          requestData = {'error': 'Invalid args type'};
         }
         
         final String requestId = requestData['requestId'] ?? '';
@@ -76,9 +89,12 @@ class JavaScriptService {
           _logger.i('🌐 HTTP request successful, calling JavaScript callback for $requestId');
           
           // Call JavaScript callback with success result
-          _jsRuntime.evaluate('''
+          jsRuntime.evaluate('''
             console.log('Resolving fetchv2 callback for request: $requestId');
+            console.log('fetchv2_callbacks exists:', typeof fetchv2_callbacks !== 'undefined');
+            console.log('callback exists for $requestId:', typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId'] !== undefined);
             if (typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId']) {
+              console.log('Calling resolve for request: $requestId');
               fetchv2_callbacks['$requestId'].resolve({
                 status: 200,
                 headers: {},
@@ -93,15 +109,16 @@ class JavaScriptService {
                 }
               });
               delete fetchv2_callbacks['$requestId'];
-              console.log('fetchv2 callback resolved successfully');
+              console.log('fetchv2 callback resolved and deleted successfully');
             } else {
               console.log('fetchv2 callback not found for request: $requestId');
+              console.log('Available callbacks:', Object.keys(fetchv2_callbacks || {}));
             }
           ''');
         } catch (e) {
           _logger.e('fetchv2 request error: $e');
           // Call JavaScript callback with error result
-          _jsRuntime.evaluate('''
+          jsRuntime.evaluate('''
             if (typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId']) {
               fetchv2_callbacks['$requestId'].reject(new Error(${json.encode(e.toString())}));
               delete fetchv2_callbacks['$requestId'];
@@ -116,8 +133,30 @@ class JavaScriptService {
       }
     });
 
+    // Set up test message handler BEFORE sending test message
+    jsRuntime.onMessage('test_message', (args) {
+      _logger.i('🎯 Test message received in Dart: $args');
+      return 'Test response from Dart';
+    });
+
+    // Test basic message passing now that handler is registered
+    jsRuntime.evaluate('''
+      console.log('Testing sendMessage function...');
+      if (typeof sendMessage === 'function') {
+        console.log('sendMessage function exists, testing...');
+        try {
+          sendMessage('test_message', 'Hello from JavaScript');
+          console.log('Test message sent successfully');
+        } catch (e) {
+          console.log('Test message failed:', e);
+        }
+      } else {
+        console.log('sendMessage function does not exist!');
+      }
+    ''');
+
     // Set up fetchv2 JavaScript function
-    _jsRuntime.evaluate('''
+    jsRuntime.evaluate('''
       var fetchv2_callbacks = {};
       var fetchv2_request_id = 0;
       
@@ -140,7 +179,8 @@ class JavaScriptService {
           };
           
           console.log('Sending fetchv2 request:', requestData);
-          sendMessage('fetchv2_request', JSON.stringify(requestData));
+          console.log('sendMessage function exists:', typeof sendMessage !== 'undefined');
+          sendMessage('fetchv2_request', requestData);
         });
       }
     ''');
@@ -149,20 +189,15 @@ class JavaScriptService {
   Future<List<SearchItem>> search(String keyword, Service service) async {
     if (!_isInitialized) await initialize();
 
-    // Wait for any existing execution to complete
-    while (_isExecuting) {
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
-
     try {
-      _isExecuting = true;
       _logger.i('🔍 Searching for "$keyword" using ${service.metadata.sourceName}');
 
       // Load the service script from local file
-      await _loadServiceScriptFromLocal(service);
+      final scriptContent = await _loadServiceScriptFromLocal(service);
 
-      // Execute search function in JavaScript
-      final result = await _executeSearch(keyword);
+      // Execute search function in JavaScript with service-specific runtime
+      final jsRuntime = _getServiceRuntime(service.id);
+      final result = await _executeSearchWithRuntime(keyword, scriptContent, jsRuntime);
       
       // Debug info removed for cleaner output
       
@@ -197,28 +232,22 @@ class JavaScriptService {
     } catch (e) {
       _logger.e('💥 Search failed: $e');
       throw Exception('Search failed: $e');
-    } finally {
-      _isExecuting = false;
     }
   }
 
   Future<List<SearchItem>> searchWithMetadata(String keyword, ServiceMetadata service) async {
     if (!_isInitialized) await initialize();
 
-    // Wait for any existing execution to complete
-    while (_isExecuting) {
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
-
+    final serviceKey = '${service.sourceName}_${service.scriptUrl}';
     try {
-      _isExecuting = true;
       _logger.i('🔍 Searching for "$keyword" using ${service.sourceName}');
 
       // Load the service script
       await _loadServiceScript(service);
 
-      // Execute search function in JavaScript
-      final result = await _executeSearch(keyword);
+      // Execute search function in JavaScript with service-specific runtime
+      final jsRuntime = _getServiceRuntime(serviceKey);
+      final result = await _executeSearchWithRuntime(keyword, _currentScript, jsRuntime);
       
       // Debug info removed for cleaner output
       
@@ -253,8 +282,6 @@ class JavaScriptService {
     } catch (e) {
       _logger.e('💥 Search failed: $e');
       throw Exception('Search failed: $e');
-    } finally {
-      _isExecuting = false;
     }
   }
 
@@ -289,15 +316,15 @@ class JavaScriptService {
     }
   }
 
-  Future<void> _loadServiceScriptFromLocal(Service service) async {
+  Future<String> _loadServiceScriptFromLocal(Service service) async {
     try {
       final scriptUrl = service.metadata.scriptUrl;
       
       // Check if script is already cached
       if (_scriptCache.containsKey(scriptUrl)) {
-        _currentScript = _scriptCache[scriptUrl]!;
-        _logger.i('📜 Using cached script for ${service.metadata.sourceName} (${_currentScript.length} chars)');
-        return;
+        final scriptContent = _scriptCache[scriptUrl]!;
+        _logger.i('📜 Using cached script for ${service.metadata.sourceName} (${scriptContent.length} chars)');
+        return scriptContent;
       }
       
       // Try to load from local file first
@@ -310,9 +337,8 @@ class JavaScriptService {
         if (scriptContent.trim().isNotEmpty) {
           // Cache the script content
           _scriptCache[scriptUrl] = scriptContent;
-          _currentScript = scriptContent;
           _logger.i('📜 Loaded script from local file for ${service.metadata.sourceName} (${scriptContent.length} chars)');
-          return;
+          return scriptContent;
         } else {
           _logger.w('⚠️ Local script file is empty for ${service.metadata.sourceName}');
         }
@@ -323,12 +349,16 @@ class JavaScriptService {
       // Fallback to network download if local file doesn't exist or is empty
       _logger.i('📜 Fallback: Downloading script from network for ${service.metadata.sourceName}');
       await _loadServiceScript(service.metadata);
+      // Return the cached script after network load
+      return _scriptCache[scriptUrl]!;
       
     } catch (e) {
       _logger.e('💥 Failed to load service script from local: $e');
       // Final fallback to network
       try {
         await _loadServiceScript(service.metadata);
+        // Return the cached script after network load
+        return _scriptCache[service.metadata.scriptUrl]!;
       } catch (networkError) {
         throw Exception('Failed to load script both locally and from network: Local: $e, Network: $networkError');
       }
@@ -351,52 +381,115 @@ class JavaScriptService {
   void clearScriptCacheForService(Service service) {
     final scriptUrl = service.metadata.scriptUrl;
     clearScriptCacheForUrl(scriptUrl);
+    // Also dispose of service-specific runtime
+    _disposeServiceRuntime(service.id);
+  }
+  
+  // Dispose of a service-specific runtime
+  void _disposeServiceRuntime(String serviceId) {
+    if (_serviceRuntimes.containsKey(serviceId)) {
+      try {
+        _serviceRuntimes[serviceId]!.dispose();
+        _serviceRuntimes.remove(serviceId);
+        _logger.i('Disposed JavaScript runtime for service: $serviceId');
+      } catch (e) {
+        _logger.w('Failed to dispose runtime for service $serviceId: $e');
+      }
+    }
   }
   
   int get cachedScriptsCount => _scriptCache.length;
   
   List<String> get cachedScriptUrls => _scriptCache.keys.toList();
 
-  Future<dynamic> _executeSearch(String keyword) async {
+  Future<dynamic> _executeSearchWithRuntime(String keyword, String scriptContent, JavascriptRuntime jsRuntime) async {
     try {
       _logger.d('Executing JavaScript search');
 
-      // Execute the script that was loaded
-      _jsRuntime.evaluate(_currentScript);
+      // Generate unique execution ID to avoid conflicts between concurrent searches
+      final executionId = DateTime.now().millisecondsSinceEpoch.toString();
 
-      // Set up Promise result variable and execute search
-      _jsRuntime.evaluate('''
-        var searchPromiseResult = null;
-        var searchPromiseError = null;
-        var searchPromiseComplete = false;
-        
-        console.log('JavaScript environment ready, starting search...');
-        console.log('Available functions:', typeof search, typeof searchResults, typeof fetchv2);
-        
-        (async function() {
-          try {
-            let results;
-            if (typeof search === 'function') {
-              console.log('Calling search function with keyword: $keyword');
-              results = await search("$keyword");
-              console.log('Search function returned:', results);
-            } else if (typeof searchResults === 'function') {
-              console.log('Calling searchResults function with keyword: $keyword');
-              results = await searchResults("$keyword");
-              console.log('SearchResults function returned:', results);
-            } else {
-              throw new Error('No search function found');
-            }
-            searchPromiseResult = JSON.stringify(results);
-            searchPromiseComplete = true;
-            console.log('Search completed successfully');
-          } catch (error) {
-            console.log('Search error:', error.toString());
-            searchPromiseError = error.toString();
-            searchPromiseComplete = true;
-          }
-        })();
+      // Execute the script that was loaded
+      _logger.i('📜 Executing script content (${scriptContent.length} chars)');
+      jsRuntime.evaluate(scriptContent);
+      
+      // Check what functions are available after loading the script
+      final functionsCheck = jsRuntime.evaluate('''
+        (function() {
+          var availableFunctions = [];
+          if (typeof search === 'function') availableFunctions.push('search');
+          if (typeof searchResults === 'function') availableFunctions.push('searchResults');
+          if (typeof fetchv2 === 'function') availableFunctions.push('fetchv2');
+          if (typeof extractDetails === 'function') availableFunctions.push('extractDetails');
+          if (typeof extractEpisodes === 'function') availableFunctions.push('extractEpisodes');
+          if (typeof extractStreamUrl === 'function') availableFunctions.push('extractStreamUrl');
+          return JSON.stringify(availableFunctions);
+        })()
       ''');
+      _logger.i('🔧 Available functions after script load: ${functionsCheck.stringResult}');
+
+      // Test basic JavaScript execution first
+      try {
+        jsRuntime.evaluate('''
+          console.log('🔍 Step 1: Basic JavaScript execution test');
+        ''');
+        _logger.i('✅ Basic JavaScript execution successful');
+        
+        jsRuntime.evaluate('''
+          console.log('🔍 Step 2: Setting up variables');
+          var searchPromiseResult_$executionId = null;
+          var searchPromiseError_$executionId = null;
+          var searchPromiseComplete_$executionId = false;
+          console.log('🔍 Step 3: Variables set successfully');
+        ''');
+        _logger.i('✅ Variable setup successful');
+        
+        jsRuntime.evaluate('''
+          console.log('🔍 Step 4: Function type checking');
+          console.log('search type:', typeof search);
+          console.log('searchResults type:', typeof searchResults);  
+          console.log('fetchv2 type:', typeof fetchv2);
+          console.log('🔍 Step 5: Function check complete');
+          
+          if (typeof searchResults === 'function') {
+            console.log('🔍 Step 6: Found searchResults function, calling now...');
+            try {
+              var results = searchResults("$keyword");
+              console.log('🔍 Step 7: searchResults returned:', results);
+              if (results && results.then) {
+                console.log('🔍 Step 8: Results is a promise, awaiting...');
+                results.then(function(data) {
+                  console.log('🔍 Step 9: Promise resolved with:', data);
+                  searchPromiseResult_$executionId = JSON.stringify(data);
+                  searchPromiseComplete_$executionId = true;
+                }).catch(function(error) {
+                  console.log('🔍 Step 9: Promise rejected with:', error);
+                  searchPromiseError_$executionId = error.toString();
+                  searchPromiseComplete_$executionId = true;
+                });
+              } else {
+                console.log('🔍 Step 8: Results is not a promise, using directly');
+                searchPromiseResult_$executionId = JSON.stringify(results);
+                searchPromiseComplete_$executionId = true;
+              }
+            } catch (error) {
+              console.log('🔍 Step 7: Error calling searchResults:', error);
+              searchPromiseError_$executionId = error.toString();
+              searchPromiseComplete_$executionId = true;
+            }
+          } else {
+            console.log('🔍 Step 6: No searchResults function found');
+            searchPromiseError_$executionId = 'No searchResults function found';
+            searchPromiseComplete_$executionId = true;
+          }
+          console.log('🔍 Step 7: Test complete');
+        ''');
+        _logger.i('✅ Function checking successful');
+        
+      } catch (e) {
+        _logger.e('❌ JavaScript execution failed: $e');
+        return [];
+      }
 
       // Poll for completion - with JavaScriptCore, Android should perform similarly to other platforms
       final maxIterations = 400; // 40 seconds timeout for all platforms
@@ -405,15 +498,15 @@ class JavaScriptService {
       for (int i = 0; i < maxIterations; i++) {
         await Future.delayed(Duration(milliseconds: pollInterval));
         
-        final completeResult = _jsRuntime.evaluate('searchPromiseComplete');
+        final completeResult = jsRuntime.evaluate('searchPromiseComplete_$executionId');
         if (completeResult.stringResult == 'true') {
-          final errorResult = _jsRuntime.evaluate('searchPromiseError');
+          final errorResult = jsRuntime.evaluate('searchPromiseError_$executionId');
           final errorString = errorResult.stringResult;
           if (errorString.isNotEmpty && errorString != 'null' && errorString != 'undefined') {
             throw Exception('JavaScript search error: $errorString');
           }
           
-          final dataResult = _jsRuntime.evaluate('searchPromiseResult');
+          final dataResult = jsRuntime.evaluate('searchPromiseResult_$executionId');
           _logger.i('🔍 Raw dataResult: ${dataResult.toString()}');
           _logger.i('🔍 stringResult: "${dataResult.stringResult}"');
           _logger.i('🔍 rawResult: ${dataResult.rawResult}');
@@ -432,6 +525,14 @@ class JavaScriptService {
             try {
               final searchResults = json.decode(resultString);
               _logger.i('🔍 Parsed searchResults: $searchResults');
+              
+              // Cleanup execution-specific variables
+              jsRuntime.evaluate('''
+                delete window.searchPromiseResult_$executionId;
+                delete window.searchPromiseError_$executionId;
+                delete window.searchPromiseComplete_$executionId;
+              ''');
+              
               return searchResults;
             } catch (e) {
               _logger.e('❌ Failed to parse search results: $e');
@@ -441,6 +542,13 @@ class JavaScriptService {
           break;
         }
       }
+      
+      // Cleanup on timeout
+      jsRuntime.evaluate('''
+        delete window.searchPromiseResult_$executionId;
+        delete window.searchPromiseError_$executionId;
+        delete window.searchPromiseComplete_$executionId;
+      ''');
       
       _logger.w('⏰ Search timed out after 40 seconds');
       return [];
@@ -457,7 +565,11 @@ class JavaScriptService {
       _logger.i('📋 Extracting details from $url');
       
       // Set up Promise result variable and execute extractDetails
-      _jsRuntime.evaluate('''
+      // Note: This method needs to be updated to use service-specific runtime
+      // For now, create a temporary runtime (this will be updated later)
+      final jsRuntime = getJavascriptRuntime(forceJavascriptCoreOnAndroid: true);
+      _setupJavaScriptEnvironmentForRuntime(jsRuntime);
+      jsRuntime.evaluate('''
         var detailsPromiseResult = null;
         var detailsPromiseError = null;
         var detailsPromiseComplete = false;
@@ -483,14 +595,14 @@ class JavaScriptService {
       for (int i = 0; i < 300; i++) { // 30 seconds timeout
         await Future.delayed(const Duration(milliseconds: 100));
         
-        final completeResult = _jsRuntime.evaluate('detailsPromiseComplete');
+        final completeResult = jsRuntime.evaluate('detailsPromiseComplete');
         if (completeResult.stringResult == 'true') {
-          final errorResult = _jsRuntime.evaluate('detailsPromiseError');
+          final errorResult = jsRuntime.evaluate('detailsPromiseError');
           if (errorResult.stringResult.isNotEmpty) {
             throw Exception('JavaScript extractDetails error: ${errorResult.stringResult}');
           }
           
-          final dataResult = _jsRuntime.evaluate('detailsPromiseResult');
+          final dataResult = jsRuntime.evaluate('detailsPromiseResult');
           final resultString = dataResult.stringResult;
           
           if (resultString.isNotEmpty) {
@@ -526,23 +638,19 @@ class JavaScriptService {
   Future<List<EpisodeLink>> extractEpisodesWithService(String detailUrl, Service service) async {
     if (!_isInitialized) await initialize();
 
-    // Wait for any existing execution to complete
-    while (_isExecuting) {
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
-
     try {
-      _isExecuting = true;
       _logger.i('📺 Extracting episodes from $detailUrl');
       
-      await _loadServiceScriptFromLocal(service);
+      final scriptContent = await _loadServiceScriptFromLocal(service);
+      _currentScript = scriptContent; // For backward compatibility
       
-      // Execute extractEpisodes function in JavaScript
-      final result = await _executeEpisodesExtraction(detailUrl);
+      // Execute extractEpisodes function in JavaScript with service-specific runtime
+      final jsRuntime = _getServiceRuntime(service.id);
+      final result = await _executeEpisodesExtractionWithRuntime(detailUrl, scriptContent, jsRuntime);
       
       _logger.i('🔍 Episodes result type: ${result.runtimeType}');
       _logger.i('🔍 Episodes result is List? ${result is List}');
-      _logger.i('🔍 Episodes result length: ${result is List ? (result as List).length : 'N/A'}');
+      _logger.i('🔍 Episodes result length: ${result is List ? result.length : 'N/A'}');
       
       // Handle both String and List results for episodes
       List<dynamic>? resultList;
@@ -574,27 +682,21 @@ class JavaScriptService {
     } catch (e) {
       _logger.e('💥 Extract episodes failed: $e');
       throw Exception('Extract episodes failed: $e');
-    } finally {
-      _isExecuting = false;
     }
   }
 
   Future<Map<String, dynamic>> extractStreamUrlWithService(String episodeUrl, Service service) async {
     if (!_isInitialized) await initialize();
 
-    // Wait for any existing execution to complete
-    while (_isExecuting) {
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
-
     try {
-      _isExecuting = true;
       _logger.i('🎬 Extracting stream URL from $episodeUrl');
       
-      await _loadServiceScriptFromLocal(service);
+      final scriptContent = await _loadServiceScriptFromLocal(service);
+      _currentScript = scriptContent; // For backward compatibility
       
-      // Execute extractStreamUrl function in JavaScript
-      final result = await _executeStreamUrlExtraction(episodeUrl);
+      // Execute extractStreamUrl function in JavaScript with service-specific runtime
+      final jsRuntime = _getServiceRuntime(service.id);
+      final result = await _executeStreamUrlExtractionWithRuntime(episodeUrl, scriptContent, jsRuntime);
       
       if (result != null) {
         _logger.i('✅ Stream URL extraction successful');
@@ -609,20 +711,18 @@ class JavaScriptService {
     } catch (e) {
       _logger.e('💥 Extract stream URL failed: $e');
       throw Exception('Extract stream URL failed: $e');
-    } finally {
-      _isExecuting = false;
     }
   }
 
-  Future<dynamic> _executeEpisodesExtraction(String detailUrl) async {
+  Future<dynamic> _executeEpisodesExtractionWithRuntime(String detailUrl, String scriptContent, JavascriptRuntime jsRuntime) async {
     try {
       _logger.d('Executing JavaScript episodes extraction');
 
       // Execute the script that was loaded
-      _jsRuntime.evaluate(_currentScript);
+      jsRuntime.evaluate(scriptContent);
 
       // Set up Promise result variable and execute episodes extraction
-      _jsRuntime.evaluate('''
+      jsRuntime.evaluate('''
         var episodesPromiseResult = null;
         var episodesPromiseError = null;
         var episodesPromiseComplete = false;
@@ -655,15 +755,15 @@ class JavaScriptService {
       for (int i = 0; i < maxIterations; i++) {
         await Future.delayed(Duration(milliseconds: pollInterval));
         
-        final completeResult = _jsRuntime.evaluate('episodesPromiseComplete');
+        final completeResult = jsRuntime.evaluate('episodesPromiseComplete');
         if (completeResult.stringResult == 'true') {
-          final errorResult = _jsRuntime.evaluate('episodesPromiseError');
+          final errorResult = jsRuntime.evaluate('episodesPromiseError');
           final errorString = errorResult.stringResult;
           if (errorString.isNotEmpty && errorString != 'null' && errorString != 'undefined') {
             throw Exception('JavaScript episodes extraction error: $errorString');
           }
           
-          final dataResult = _jsRuntime.evaluate('episodesPromiseResult');
+          final dataResult = jsRuntime.evaluate('episodesPromiseResult');
           final resultString = dataResult.stringResult;
           
           if (resultString.isNotEmpty && resultString != 'null') {
@@ -687,15 +787,15 @@ class JavaScriptService {
     }
   }
 
-  Future<Map<String, dynamic>?> _executeStreamUrlExtraction(String episodeUrl) async {
+  Future<Map<String, dynamic>?> _executeStreamUrlExtractionWithRuntime(String episodeUrl, String scriptContent, JavascriptRuntime jsRuntime) async {
     try {
       _logger.d('Executing JavaScript stream extraction');
 
       // Execute the script that was loaded
-      _jsRuntime.evaluate(_currentScript);
+      jsRuntime.evaluate(scriptContent);
 
       // Set up Promise result variable and execute stream URL extraction
-      _jsRuntime.evaluate('''
+      jsRuntime.evaluate('''
         var streamPromiseResult = null;
         var streamPromiseError = null;
         var streamPromiseComplete = false;
@@ -728,15 +828,15 @@ class JavaScriptService {
       for (int i = 0; i < maxIterations; i++) {
         await Future.delayed(Duration(milliseconds: pollInterval));
         
-        final completeResult = _jsRuntime.evaluate('streamPromiseComplete');
+        final completeResult = jsRuntime.evaluate('streamPromiseComplete');
         if (completeResult.stringResult == 'true') {
-          final errorResult = _jsRuntime.evaluate('streamPromiseError');
+          final errorResult = jsRuntime.evaluate('streamPromiseError');
           final errorString = errorResult.stringResult;
           if (errorString.isNotEmpty && errorString != 'null' && errorString != 'undefined') {
             throw Exception('JavaScript stream URL extraction error: $errorString');
           }
           
-          final dataResult = _jsRuntime.evaluate('streamPromiseResult');
+          final dataResult = jsRuntime.evaluate('streamPromiseResult');
           final resultString = dataResult.stringResult;
           
           if (resultString.isNotEmpty && resultString != 'null') {
