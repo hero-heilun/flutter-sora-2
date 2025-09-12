@@ -412,13 +412,23 @@ class JavaScriptService {
       // Generate unique execution ID to avoid conflicts between concurrent searches
       final executionId = DateTime.now().millisecondsSinceEpoch.toString();
 
+      // Clean the script content to prevent syntax errors from appended content
+      String cleanedScript = scriptContent;
+      const geEndMarker = '/* {GE END} */';
+      int markerIndex = cleanedScript.indexOf(geEndMarker);
+      if (markerIndex != -1) {
+          int endIndex = markerIndex + geEndMarker.length;
+          cleanedScript = cleanedScript.substring(0, endIndex);
+          _logger.i('✂️ Script content was truncated at GE END marker to prevent syntax errors.');
+      }
+
       // Generate a key to track if this script is loaded in this specific runtime
-      final scriptLoadedKey = '${jsRuntime.hashCode}-${scriptContent.hashCode}';
+      final scriptLoadedKey = '${jsRuntime.hashCode}-${cleanedScript.hashCode}';
 
       // Execute the script that was loaded, but only once per runtime instance
       if (_scriptsLoadedInRuntime[scriptLoadedKey] != true) {
-        _logger.i('📜 Executing script content for the first time in this runtime (${scriptContent.length} chars)');
-        jsRuntime.evaluate(scriptContent);
+        _logger.i('📜 Executing script content for the first time in this runtime (${cleanedScript.length} chars)');
+        jsRuntime.evaluate(cleanedScript);
         _scriptsLoadedInRuntime[scriptLoadedKey] = true;
       } else {
         _logger.i('📜 Script content already evaluated in this runtime, skipping.');
