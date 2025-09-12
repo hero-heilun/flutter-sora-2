@@ -28,6 +28,9 @@ class JavaScriptService {
   // Script cache: URL -> script content
   final Map<String, String> _scriptCache = {};
   
+  // Track which scripts have been loaded into which runtimes to avoid re-evaluation
+  final Map<String, bool> _scriptsLoadedInRuntime = {};
+  
 
   Future<void> initialize() async {
     _isInitialized = true;
@@ -409,9 +412,17 @@ class JavaScriptService {
       // Generate unique execution ID to avoid conflicts between concurrent searches
       final executionId = DateTime.now().millisecondsSinceEpoch.toString();
 
-      // Execute the script that was loaded
-      _logger.i('📜 Executing script content (${scriptContent.length} chars)');
-      jsRuntime.evaluate(scriptContent);
+      // Generate a key to track if this script is loaded in this specific runtime
+      final scriptLoadedKey = '${jsRuntime.hashCode}-${scriptContent.hashCode}';
+
+      // Execute the script that was loaded, but only once per runtime instance
+      if (_scriptsLoadedInRuntime[scriptLoadedKey] != true) {
+        _logger.i('📜 Executing script content for the first time in this runtime (${scriptContent.length} chars)');
+        jsRuntime.evaluate(scriptContent);
+        _scriptsLoadedInRuntime[scriptLoadedKey] = true;
+      } else {
+        _logger.i('📜 Script content already evaluated in this runtime, skipping.');
+      }
       
       // Check what functions are available after loading the script
       final functionsCheck = jsRuntime.evaluate('''
