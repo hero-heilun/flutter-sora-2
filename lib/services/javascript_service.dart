@@ -28,6 +28,9 @@ class JavaScriptService {
   // Script cache: URL -> script content
   final Map<String, String> _scriptCache = {};
   
+  // Map to track which runtime initiated each request to prevent callback race conditions
+  final Map<String, String> _requestToRuntime = {};
+  
   // Track which scripts have been loaded into which runtimes to avoid re-evaluation
   final Map<String, bool> _scriptsLoadedInRuntime = {};
   
@@ -47,13 +50,13 @@ class JavaScriptService {
           'stackSize': 2048 * 1024,
         }
       );
-      _setupJavaScriptEnvironmentForRuntime(runtime);
+      _setupJavaScriptEnvironmentForRuntime(runtime, serviceId);
       _serviceRuntimes[serviceId] = runtime;
     }
     return _serviceRuntimes[serviceId]!;
   }
 
-  void _setupJavaScriptEnvironmentForRuntime(JavascriptRuntime jsRuntime) {
+  void _setupJavaScriptEnvironmentForRuntime(JavascriptRuntime jsRuntime, String serviceId) {
     // Set up fetchv2 message handler for this specific runtime
     _logger.i('🔧 Setting up fetchv2_request handler for runtime');
     jsRuntime.onMessage('fetchv2_request', (dynamic args) async {
@@ -79,7 +82,10 @@ class JavaScriptService {
         final Map<String, dynamic> headers = Map<String, dynamic>.from(requestData['headers'] ?? {});
         final String? body = requestData['body'];
 
-        _logger.i('🌐 Processing fetchv2 request: $method $url');
+        // Track which runtime made this request to prevent callback race conditions
+        _requestToRuntime[requestId] = serviceId;
+        
+        _logger.i('🌐 Processing fetchv2 request: $method $url (from service: $serviceId, request: $requestId)');
 
         try {
           _logger.i('🌐 Making HTTP request...');
@@ -92,6 +98,7 @@ class JavaScriptService {
           
           _logger.i('🌐 HTTP request successful, response length: ${response.length}');
           _logger.i('🌐 Response preview: ${response.length > 200 ? response.substring(0, 200) + "..." : response}');
+          _logger.i('🌐 Request mapping for $requestId: target service = ${_requestToRuntime[requestId]}');
           
           // Debug: Show first 50 chars of raw response to check format
           final first50 = response.length > 50 ? response.substring(0, 50) : response;
@@ -103,36 +110,50 @@ class JavaScriptService {
           _logger.i('🌐 Response looks like JSON: $looksLikeJson');
           _logger.i('🌐 Calling JavaScript callback for $requestId');
           
-          // Call JavaScript callback with success result
+          // Call JavaScript callback with success result in the correct runtime
           try {
-            jsRuntime.evaluate('''
-              console.log('Resolving fetchv2 callback for request: $requestId');
-              console.log('fetchv2_callbacks exists:', typeof fetchv2_callbacks !== 'undefined');
-              console.log('callback exists for $requestId:', typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId'] !== undefined);
-              if (typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId']) {
-                console.log('Calling resolve for request: $requestId');
-                fetchv2_callbacks['$requestId'].resolve({
-                  status: 200,
-                  headers: {},
-                  body: ${json.encode(response)},
-                  text: function() { return Promise.resolve(${json.encode(response)}); },
-                  json: function() { 
-                    try { 
-                      return Promise.resolve(JSON.parse(${json.encode(response)})); 
-                    } catch(e) { 
-                      console.log('JSON parse failed, returning raw text instead');
-                      return Promise.resolve(${json.encode(response)}); 
-                    } 
-                  }
-                });
-                delete fetchv2_callbacks['$requestId'];
-                console.log('fetchv2 callback resolved and deleted successfully');
-              } else {
-                console.log('fetchv2 callback not found for request: $requestId');
-                console.log('Available callbacks:', Object.keys(fetchv2_callbacks || {}));
-              }
-            ''');
-            _logger.i('🌐 JavaScript callback executed successfully');
+            final String targetRuntime = _requestToRuntime[requestId] ?? serviceId;
+            final JavascriptRuntime? targetJsRuntime = _serviceRuntimes[targetRuntime];
+            
+            if (targetJsRuntime != null) {
+              _logger.i('🎯 Delivering callback to correct runtime: $targetRuntime');
+              targetJsRuntime.evaluate('''
+                console.log('✅ Resolving fetchv2 callback for request: $requestId in runtime: $targetRuntime');
+                console.log('fetchv2_callbacks exists:', typeof fetchv2_callbacks !== 'undefined');
+                console.log('callback exists for $requestId:', typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId'] !== undefined);
+                if (typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId']) {
+                  console.log('✅ Calling resolve for request: $requestId');
+                  var callback = fetchv2_callbacks['$requestId'];
+                  delete fetchv2_callbacks['$requestId']; // Delete first to prevent race conditions
+                  
+                  callback.resolve({
+                    status: 200,
+                    headers: {},
+                    body: ${json.encode(response)},
+                    text: function() { return Promise.resolve(${json.encode(response)}); },
+                    json: function() { 
+                      try { 
+                        return Promise.resolve(JSON.parse(${json.encode(response)})); 
+                      } catch(e) { 
+                        console.log('JSON parse failed, returning raw text instead');
+                        return Promise.resolve(${json.encode(response)}); 
+                      } 
+                    }
+                  });
+                  console.log('✅ fetchv2 callback resolved and deleted successfully');
+                } else {
+                  console.log('❌ fetchv2 callback not found for request: $requestId');
+                  console.log('Available callbacks:', Object.keys(fetchv2_callbacks || {}));
+                  console.log('This may indicate a race condition or the callback was already processed');
+                }
+              ''');
+              _logger.i('🌐 JavaScript callback executed successfully in runtime: $targetRuntime');
+            } else {
+              _logger.e('💥 Target runtime $targetRuntime not found for request $requestId');
+            }
+            
+            // Clean up the request mapping
+            _requestToRuntime.remove(requestId);
           } catch (callbackError) {
             _logger.e('💥 Error in success JavaScript callback: $callbackError');
           }
@@ -140,15 +161,26 @@ class JavaScriptService {
           _logger.e('💥 fetchv2 request failed: $e');
           _logger.e('💥 Stack trace: $stackTrace');
           
-          // Call JavaScript callback with error result
+          // Call JavaScript callback with error result in the correct runtime
           try {
-            jsRuntime.evaluate('''
-              console.log('Calling error callback for request: $requestId');
-              if (typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId']) {
-                fetchv2_callbacks['$requestId'].reject(new Error(${json.encode(e.toString())}));
-                delete fetchv2_callbacks['$requestId'];
-              }
-            ''');
+            final String targetRuntime = _requestToRuntime[requestId] ?? serviceId;
+            final JavascriptRuntime? targetJsRuntime = _serviceRuntimes[targetRuntime];
+            
+            if (targetJsRuntime != null) {
+              _logger.i('🎯 Delivering error callback to correct runtime: $targetRuntime');
+              targetJsRuntime.evaluate('''
+                console.log('❌ Calling error callback for request: $requestId in runtime: $targetRuntime');
+                if (typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId']) {
+                  fetchv2_callbacks['$requestId'].reject(new Error(${json.encode(e.toString())}));
+                  delete fetchv2_callbacks['$requestId'];
+                }
+              ''');
+            } else {
+              _logger.e('💥 Target runtime $targetRuntime not found for error callback $requestId');
+            }
+            
+            // Clean up the request mapping
+            _requestToRuntime.remove(requestId);
           } catch (callbackError) {
             _logger.e('💥 Error in JavaScript callback: $callbackError');
           }
@@ -183,15 +215,16 @@ class JavaScriptService {
       }
     ''');
 
-    // Set up fetchv2 JavaScript function
+    // Set up fetchv2 JavaScript function with service-specific request IDs
     jsRuntime.evaluate('''
       var fetchv2_callbacks = {};
       var fetchv2_request_id = 0;
+      var serviceId = "$serviceId";
       
       function fetchv2(url, headers = {}, method = "GET", body = null, redirect = true, encoding) {
         console.log('fetchv2 called with URL:', url, 'method:', method);
         return new Promise(function(resolve, reject) {
-          var requestId = 'req_' + (++fetchv2_request_id);
+          var requestId = serviceId + '_req_' + (++fetchv2_request_id);
           
           fetchv2_callbacks[requestId] = {
             resolve: resolve,
@@ -659,7 +692,7 @@ class JavaScriptService {
       // Note: This method needs to be updated to use service-specific runtime
       // For now, create a temporary runtime (this will be updated later)
       final jsRuntime = getJavascriptRuntime(forceJavascriptCoreOnAndroid: true);
-      _setupJavaScriptEnvironmentForRuntime(jsRuntime);
+      _setupJavaScriptEnvironmentForRuntime(jsRuntime, 'temp_details');
       jsRuntime.evaluate('''
         var detailsPromiseResult = null;
         var detailsPromiseError = null;
