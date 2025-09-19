@@ -112,6 +112,7 @@ class HttpService {
         options: Options(
           method: method,
           headers: requestHeaders,
+          responseType: ResponseType.plain, // Get raw string response, don't parse JSON
           validateStatus: (status) => true,
         ),
         data: body,
@@ -128,7 +129,8 @@ class HttpService {
         return '<html><body>Error ${response.statusCode}</body></html>';
       }
 
-      return response.data.toString();
+      // Return the raw string response (should be valid JSON string from s.to)
+      return response.data as String;
     } catch (e) {
       _logger.e('FetchV2 request failed: $e');
       return '<html><body>Network Error</body></html>';
@@ -180,6 +182,7 @@ class HttpService {
         options: Options(
           method: method,
           headers: requestHeaders,
+          responseType: ResponseType.plain, // Get raw string response, don't parse JSON
           validateStatus: (status) => true, // Accept all status codes
         ),
         data: body,

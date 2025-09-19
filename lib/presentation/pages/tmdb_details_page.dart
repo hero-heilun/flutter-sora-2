@@ -1208,9 +1208,11 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
       await Future.wait(futures);
       
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Search failed: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Search failed: $e';
+        });
+      }
     }
   }
 
@@ -1228,31 +1230,34 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
       }).toList();
 
       // Update this service's results
-      setState(() {
-        final serviceIndex = _searchProgress.serviceResults.indexWhere(
-          (s) => s.serviceId == service.id,
-        );
-        
-        if (serviceIndex != -1) {
-          _searchProgress.serviceResults[serviceIndex] = ServiceSearchResult(
-            serviceId: service.id,
-            serviceName: service.metadata.sourceName,
-            serviceIcon: service.metadata.iconUrl,
-            status: ServiceSearchStatus.completed,
-            results: filteredResults,
+      if (mounted) {
+        setState(() {
+          final serviceIndex = _searchProgress.serviceResults.indexWhere(
+            (s) => s.serviceId == service.id,
           );
           
-          _searchProgress = _searchProgress.copyWith(
-            completedServices: _searchProgress.serviceResults
-                .where((s) => s.status != ServiceSearchStatus.loading)
-                .length,
-          );
-        }
-      });
+          if (serviceIndex != -1) {
+            _searchProgress.serviceResults[serviceIndex] = ServiceSearchResult(
+              serviceId: service.id,
+              serviceName: service.metadata.sourceName,
+              serviceIcon: service.metadata.iconUrl,
+              status: ServiceSearchStatus.completed,
+              results: filteredResults,
+            );
+            
+            _searchProgress = _searchProgress.copyWith(
+              completedServices: _searchProgress.serviceResults
+                  .where((s) => s.status != ServiceSearchStatus.loading)
+                  .length,
+            );
+          }
+        });
+      }
       
     } catch (e) {
       // Update this service with error
-      setState(() {
+      if (mounted) {
+        setState(() {
         final serviceIndex = _searchProgress.serviceResults.indexWhere(
           (s) => s.serviceId == service.id,
         );
@@ -1273,6 +1278,7 @@ class _ServiceSearchDialogState extends ConsumerState<ServiceSearchDialog> {
           );
         }
       });
+      }
     }
   }
 

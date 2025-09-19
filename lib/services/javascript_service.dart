@@ -82,6 +82,7 @@ class JavaScriptService {
         _logger.i('🌐 Processing fetchv2 request: $method $url');
 
         try {
+          _logger.i('🌐 Making HTTP request...');
           final response = await HttpService.instance.dartFetchV2(
             url: url,
             method: method,
@@ -89,44 +90,68 @@ class JavaScriptService {
             body: body,
           );
           
-          _logger.i('🌐 HTTP request successful, calling JavaScript callback for $requestId');
+          _logger.i('🌐 HTTP request successful, response length: ${response.length}');
+          _logger.i('🌐 Response preview: ${response.length > 200 ? response.substring(0, 200) + "..." : response}');
+          
+          // Debug: Show first 50 chars of raw response to check format
+          final first50 = response.length > 50 ? response.substring(0, 50) : response;
+          _logger.i('🌐 Raw response first 50 chars: "$first50"');
+          
+          // Check if response looks like JSON
+          final trimmedResponse = response.trim();
+          final looksLikeJson = trimmedResponse.startsWith('{') || trimmedResponse.startsWith('[');
+          _logger.i('🌐 Response looks like JSON: $looksLikeJson');
+          _logger.i('🌐 Calling JavaScript callback for $requestId');
           
           // Call JavaScript callback with success result
-          jsRuntime.evaluate('''
-            console.log('Resolving fetchv2 callback for request: $requestId');
-            console.log('fetchv2_callbacks exists:', typeof fetchv2_callbacks !== 'undefined');
-            console.log('callback exists for $requestId:', typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId'] !== undefined);
-            if (typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId']) {
-              console.log('Calling resolve for request: $requestId');
-              fetchv2_callbacks['$requestId'].resolve({
-                status: 200,
-                headers: {},
-                body: ${json.encode(response)},
-                text: function() { return Promise.resolve(${json.encode(response)}); },
-                json: function() { 
-                  try { 
-                    return Promise.resolve(JSON.parse(${json.encode(response)})); 
-                  } catch(e) { 
-                    return Promise.reject(new Error('JSON parse error')); 
-                  } 
-                }
-              });
-              delete fetchv2_callbacks['$requestId'];
-              console.log('fetchv2 callback resolved and deleted successfully');
-            } else {
-              console.log('fetchv2 callback not found for request: $requestId');
-              console.log('Available callbacks:', Object.keys(fetchv2_callbacks || {}));
-            }
-          ''');
-        } catch (e) {
-          _logger.e('fetchv2 request error: $e');
+          try {
+            jsRuntime.evaluate('''
+              console.log('Resolving fetchv2 callback for request: $requestId');
+              console.log('fetchv2_callbacks exists:', typeof fetchv2_callbacks !== 'undefined');
+              console.log('callback exists for $requestId:', typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId'] !== undefined);
+              if (typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId']) {
+                console.log('Calling resolve for request: $requestId');
+                fetchv2_callbacks['$requestId'].resolve({
+                  status: 200,
+                  headers: {},
+                  body: ${json.encode(response)},
+                  text: function() { return Promise.resolve(${json.encode(response)}); },
+                  json: function() { 
+                    try { 
+                      return Promise.resolve(JSON.parse(${json.encode(response)})); 
+                    } catch(e) { 
+                      console.log('JSON parse failed, returning raw text instead');
+                      return Promise.resolve(${json.encode(response)}); 
+                    } 
+                  }
+                });
+                delete fetchv2_callbacks['$requestId'];
+                console.log('fetchv2 callback resolved and deleted successfully');
+              } else {
+                console.log('fetchv2 callback not found for request: $requestId');
+                console.log('Available callbacks:', Object.keys(fetchv2_callbacks || {}));
+              }
+            ''');
+            _logger.i('🌐 JavaScript callback executed successfully');
+          } catch (callbackError) {
+            _logger.e('💥 Error in success JavaScript callback: $callbackError');
+          }
+        } catch (e, stackTrace) {
+          _logger.e('💥 fetchv2 request failed: $e');
+          _logger.e('💥 Stack trace: $stackTrace');
+          
           // Call JavaScript callback with error result
-          jsRuntime.evaluate('''
-            if (typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId']) {
-              fetchv2_callbacks['$requestId'].reject(new Error(${json.encode(e.toString())}));
-              delete fetchv2_callbacks['$requestId'];
-            }
-          ''');
+          try {
+            jsRuntime.evaluate('''
+              console.log('Calling error callback for request: $requestId');
+              if (typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId']) {
+                fetchv2_callbacks['$requestId'].reject(new Error(${json.encode(e.toString())}));
+                delete fetchv2_callbacks['$requestId'];
+              }
+            ''');
+          } catch (callbackError) {
+            _logger.e('💥 Error in JavaScript callback: $callbackError');
+          }
         }
         
         return 'OK';
@@ -412,23 +437,68 @@ class JavaScriptService {
       // Generate unique execution ID to avoid conflicts between concurrent searches
       final executionId = DateTime.now().millisecondsSinceEpoch.toString();
 
-      // Clean the script content to prevent syntax errors from appended content
+      // Use the full script content without truncation
       String cleanedScript = scriptContent;
-      const geEndMarker = '/* {GE END} */';
-      int markerIndex = cleanedScript.indexOf(geEndMarker);
-      if (markerIndex != -1) {
-          int endIndex = markerIndex + geEndMarker.length;
-          cleanedScript = cleanedScript.substring(0, endIndex);
-          _logger.i('✂️ Script content was truncated at GE END marker to prevent syntax errors.');
-      }
+      _logger.i('📜 Using full script content without truncation (${cleanedScript.length} chars)');
 
       // Generate a key to track if this script is loaded in this specific runtime
       final scriptLoadedKey = '${jsRuntime.hashCode}-${cleanedScript.hashCode}';
 
-      // Execute the script that was loaded, but only once per runtime instance
       if (_scriptsLoadedInRuntime[scriptLoadedKey] != true) {
         _logger.i('📜 Executing script content for the first time in this runtime (${cleanedScript.length} chars)');
-        jsRuntime.evaluate(cleanedScript);
+        
+        try {
+          // Check for modern JavaScript syntax that might not be supported
+          final modernSyntaxPatterns = [
+            '?.',  // Optional chaining
+            '??',  // Nullish coalescing
+            '?.(',  // Optional chaining with function calls
+            '?.[',  // Optional chaining with bracket notation
+          ];
+          
+          bool hasModernSyntax = false;
+          for (String pattern in modernSyntaxPatterns) {
+            if (cleanedScript.contains(pattern)) {
+              _logger.w('⚠️ Script contains modern syntax: $pattern');
+              hasModernSyntax = true;
+            }
+          }
+          
+          if (hasModernSyntax) {
+            _logger.w('⚠️ Script contains modern JavaScript syntax that may not be supported by Flutter JS engine');
+            
+            // Try to replace optional chaining with safe alternatives
+            String compatibleScript = cleanedScript;
+            
+            // Replace optional chaining operators with safer alternatives
+            // This is a basic replacement - might need more sophisticated parsing
+            compatibleScript = compatibleScript.replaceAllMapped(
+              RegExp(r'(\w+)\?\.\s*(\w+)'),
+              (match) => '(${match.group(1)} && ${match.group(1)}.${match.group(2)})'
+            );
+            
+            // Replace nullish coalescing with logical OR
+            compatibleScript = compatibleScript.replaceAll(' ?? ', ' || ');
+            
+            _logger.i('🔧 Converting script to compatible syntax...');
+            cleanedScript = compatibleScript;
+          }
+          
+          // Execute the script
+          final result = jsRuntime.evaluate(cleanedScript);
+          _logger.i('✅ Script evaluation completed');
+          
+          // Verify that main functions are now available
+          final functionTest = jsRuntime.evaluate('typeof searchResults');
+          if (functionTest.stringResult != 'function') {
+            throw Exception('searchResults function not available after script execution: ${functionTest.stringResult}');
+          }
+          
+        } catch (e) {
+          _logger.e('❌ Script evaluation failed: $e');
+          throw Exception('Script evaluation failed: $e');
+        }
+        
         _scriptsLoadedInRuntime[scriptLoadedKey] = true;
       } else {
         _logger.i('📜 Script content already evaluated in this runtime, skipping.');
