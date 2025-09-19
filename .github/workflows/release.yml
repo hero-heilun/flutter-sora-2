@@ -42,28 +42,34 @@ jobs:
       # 3. ANDROID_KEY_ALIAS: The alias for your release key.
       # 4. ANDROID_KEY_PASSWORD: The password for the key alias.
       - name: Decode and install Android keystore
+        # This step only runs if the secret is present.
+        if: secrets.ANDROID_KEYSTORE_BASE64 != ''
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
-        # This step is conditional and will only run if the secret is present.
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
 
-      - name: Build Android AppBundle
+      - name: Build Android AppBundle (Unsigned)
+        # This step runs if the keystore secret is NOT present.
+        if: secrets.ANDROID_KEYSTORE_BASE64 == ''
         run: |
           flutter build appbundle \
             --release \
             --build-name=${{ github.event.inputs.version }} \
             --build-number=${{ github.run_number }}
-        # The following arguments are only added if the secrets are available for signing.
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+
+      - name: Build Android AppBundle (Signed)
+        # This step runs if the keystore secret IS present.
+        if: secrets.ANDROID_KEYSTORE_BASE64 != ''
+        # Assumes your gradle file is set up to read these environment variables for signing.
+        run: |
+          flutter build appbundle \
+            --release \
+            --build-name=${{ github.event.inputs.version }} \
+            --build-number=${{ github.run_number }}
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/android/app/upload-keystore.jks
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          # This part is a bit tricky in shell. A better way is to use a gradle.properties file.
-          # For simplicity here, we assume you have set up signing in your build.gradle.kts
-          # Or you can pass these as command line arguments if your gradle setup supports it.
-          # e.g. flutter build appbundle --release ... -PkeyAlias=...
 
       - name: Upload Android AppBundle
         uses: actions/upload-artifact@v3
@@ -84,15 +90,11 @@ jobs:
           channel: 'stable'
           flutter-version: '3.x' # Or specify your project's Flutter version
 
-      # Note: You must create these secrets in your GitHub repository settings
-      # for iOS signing. This is more complex than Android.
+      # Note: You must create secrets for iOS signing, which is more complex than Android.
       # 1. IOS_DIST_CERT_BASE64: Your distribution certificate (.p12), base64 encoded.
       # 2. IOS_DIST_CERT_PASSWORD: The password for the certificate.
       # 3. IOS_PROVISIONING_PROFILE_BASE64: Your App Store provisioning profile, base64 encoded.
-      # You would then have a step here to decode and install them into the keychain
-      # and the correct directory. For simplicity, this example omits the signing steps.
-      # You can build an unsigned IPA for testing or use a service like Codemagic
-      # which simplifies this process.
+      # This example omits the signing steps for simplicity.
 
       - name: Get Flutter dependencies
         run: flutter pub get
