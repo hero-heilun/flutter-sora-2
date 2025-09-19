@@ -23,7 +23,6 @@ dependencies:
   http: ^1.2.2
   
   # JavaScript Engine
-  flutter_js: ^0.8.0
   
   # Video Player
   video_player: ^2.8.6
@@ -47,6 +46,7 @@ dependencies:
   logger: ^2.4.0
   url_launcher: ^6.3.0
   path: ^1.9.0
+  flutter_js: ^0.8.5
 
 dev_dependencies:
   flutter_test:
