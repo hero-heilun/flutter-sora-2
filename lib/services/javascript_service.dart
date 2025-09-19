@@ -42,27 +42,38 @@ class JavaScriptService {
   
   // Get or create a service-specific JavaScript runtime
   JavascriptRuntime _getServiceRuntime(String serviceId) {
-    if (!_serviceRuntimes.containsKey(serviceId)) {
-      _logger.i('Creating new JavaScript runtime for service: $serviceId');
-      final runtime = getJavascriptRuntime(
-        forceJavascriptCoreOnAndroid: true,
-        extraArgs: {
-          'stackSize': 2048 * 1024,
-        }
-      );
-      _setupJavaScriptEnvironmentForRuntime(runtime, serviceId);
-      _serviceRuntimes[serviceId] = runtime;
+    _logger.i('Creating new JavaScript runtime for service: $serviceId to ensure a clean environment.');
+
+    // Dispose of the old one if it exists to prevent memory leaks.
+    if (_serviceRuntimes.containsKey(serviceId)) {
+      try {
+        _serviceRuntimes[serviceId]!.dispose();
+        _logger.i('🚮 Disposed old runtime for service $serviceId.');
+      } catch (e) {
+        _logger.w('Failed to dispose old runtime for $serviceId: $e');
+      }
     }
-    return _serviceRuntimes[serviceId]!;
+
+    // Create a new runtime for every call to avoid state corruption issues.
+    final runtime = getJavascriptRuntime(
+      forceJavascriptCoreOnAndroid: true,
+      extraArgs: {
+        'stackSize': 2048 * 1024,
+      }
+    );
+    _setupJavaScriptEnvironmentForRuntime(runtime, serviceId);
+    _serviceRuntimes[serviceId] = runtime;
+    return runtime;
   }
 
   void _setupJavaScriptEnvironmentForRuntime(JavascriptRuntime jsRuntime, String serviceId) {
-    // Set up fetchv2 message handler for this specific runtime
-    _logger.i('🔧 Setting up fetchv2_request handler for runtime');
-    jsRuntime.onMessage('fetchv2_request', (dynamic args) async {
-      _logger.i('🌟 fetchv2_request message handler triggered!');
+    // Set up a service-specific fetchv2 message handler to prevent concurrency issues
+    final channelName = 'fetchv2_request_$serviceId';
+    _logger.i('🔧 Setting up $channelName handler for runtime $serviceId');
+    jsRuntime.onMessage(channelName, (dynamic args) async {
+      _logger.i('🌟 $channelName message handler triggered for service $serviceId!');
       try {
-        _logger.i('🌐 fetchv2 request received: ${args.toString()}');
+        _logger.i('🌐 fetchv2 request received on $channelName: ${args.toString()}');
         // args is already a Map, not a JSON string
         Map<String, dynamic> requestData;
         if (args is String) {
@@ -220,6 +231,7 @@ class JavaScriptService {
       var fetchv2_callbacks = {};
       var fetchv2_request_id = 0;
       var serviceId = "$serviceId";
+      var channelName = 'fetchv2_request_$serviceId';
       
       function fetchv2(url, headers = {}, method = "GET", body = null, redirect = true, encoding) {
         console.log('fetchv2 called with URL:', url, 'method:', method);
@@ -239,9 +251,9 @@ class JavaScriptService {
             body: body
           };
           
-          console.log('Sending fetchv2 request (stringified):', JSON.stringify(requestData));
+          console.log('Sending fetchv2 request on ' + channelName + ' (stringified):', JSON.stringify(requestData));
           console.log('sendMessage function exists:', typeof sendMessage !== 'undefined');
-          sendMessage('fetchv2_request', JSON.stringify(requestData));
+          sendMessage(channelName, JSON.stringify(requestData));
         });
       }
     ''');
