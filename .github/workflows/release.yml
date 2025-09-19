@@ -15,6 +15,8 @@ jobs:
   build_android:
     name: Build Android APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create a GitHub Release
     env:
       # Create a job-level env var to check for the secret's existence.
       # This is a robust way to handle conditionals.
@@ -28,6 +30,14 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: "17"
+
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk
+          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle.kts', '**/gradle.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-android-sdk-
 
       - name: Cache Gradle dependencies
         uses: actions/cache@v4
