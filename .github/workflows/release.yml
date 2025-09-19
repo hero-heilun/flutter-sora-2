@@ -15,6 +15,10 @@ jobs:
   build_android:
     name: Build Android AppBundle
     runs-on: ubuntu-latest
+    env:
+      # Create a job-level env var to check for the secret's existence.
+      # This is a robust way to handle conditionals.
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -42,14 +46,13 @@ jobs:
       # 3. ANDROID_KEY_ALIAS: The alias for your release key.
       # 4. ANDROID_KEY_PASSWORD: The password for the key alias.
       - name: Decode and install Android keystore
-        # This step only runs if the secret is present.
-        if: secrets.ANDROID_KEYSTORE_BASE64 != ''
+        # Use the env var for the condition. Note: it will be a string 'true' or 'false'.
+        if: env.HAS_KEYSTORE == 'true'
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
 
       - name: Build Android AppBundle (Unsigned)
-        # This step runs if the keystore secret is NOT present.
-        if: secrets.ANDROID_KEYSTORE_BASE64 == ''
+        if: env.HAS_KEYSTORE == 'false'
         run: |
           flutter build appbundle \
             --release \
@@ -57,8 +60,7 @@ jobs:
             --build-number=${{ github.run_number }}
 
       - name: Build Android AppBundle (Signed)
-        # This step runs if the keystore secret IS present.
-        if: secrets.ANDROID_KEYSTORE_BASE64 != ''
+        if: env.HAS_KEYSTORE == 'true'
         # Assumes your gradle file is set up to read these environment variables for signing.
         run: |
           flutter build appbundle \
