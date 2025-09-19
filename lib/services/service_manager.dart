@@ -227,33 +227,76 @@ class ServiceManager {
   }
 
   Future<List<MediaItem>> getDetails(String url) async {
-    if (_activeService == null) {
-      throw Exception('No active service');
+    Service serviceToUse;
+    try {
+      final urlHost = Uri.parse(url).host;
+      serviceToUse = _services.firstWhere(
+        (s) {
+          final serviceName = s.metadata.sourceName.toLowerCase().split(' ')[0];
+          return urlHost.contains(serviceName);
+        },
+      );
+      _logger.i('Found matching service "${serviceToUse.metadata.sourceName}" for URL "$url"');
+    } catch (e) {
+      _logger.e('Could not find a matching service for URL "$url". Attempting to use active service as a fallback. Error: $e');
+      if (_activeService == null) {
+        throw Exception('No active service and no matching service found for URL "$url"');
+      }
+      _logger.w('Using fallback active service: ${_activeService!.metadata.sourceName}');
+      serviceToUse = _activeService!;
     }
 
-    final mediaItem = await JavaScriptService.instance.extractDetails(url);
+    final mediaItem = await JavaScriptService.instance.extractDetails(url, serviceToUse);
     return [mediaItem]; // Wrap single item in list to match return type
   }
 
   Future<List<EpisodeLink>> getEpisodes(String url) async {
-    if (_activeService == null) {
-      throw Exception('No active service');
+    try {
+      final urlHost = Uri.parse(url).host;
+      final service = _services.firstWhere(
+        (s) {
+          final serviceName = s.metadata.sourceName.toLowerCase().split(' ')[0];
+          return urlHost.contains(serviceName);
+        },
+      );
+      _logger.i('Found matching service "${service.metadata.sourceName}" for URL "$url"');
+      return await JavaScriptService.instance.extractEpisodesWithService(url, service);
+    } catch (e) {
+      _logger.e('Could not find a matching service for URL "$url". Attempting to use active service as a fallback. Error: $e');
+      if (_activeService == null) {
+        throw Exception('No active service and no matching service found for URL "$url"');
+      }
+      _logger.w('Using fallback active service: ${_activeService!.metadata.sourceName}');
+      return await JavaScriptService.instance.extractEpisodesWithService(url, _activeService!);
     }
-
-    return await JavaScriptService.instance.extractEpisodesWithService(url, _activeService!);
   }
 
   Future<StreamData?> getStreamUrl(String url) async {
-    if (_activeService == null) {
-      throw Exception('No active service');
+    Service serviceToUse;
+    try {
+      final urlHost = Uri.parse(url).host;
+      serviceToUse = _services.firstWhere(
+        (s) {
+          final serviceName = s.metadata.sourceName.toLowerCase().split(' ')[0];
+          return urlHost.contains(serviceName);
+        },
+      );
+      _logger.i('Found matching service "${serviceToUse.metadata.sourceName}" for URL "$url"');
+    } catch (e) {
+      _logger.e('Could not find a matching service for URL "$url". Attempting to use active service as a fallback. Error: $e');
+      if (_activeService == null) {
+        throw Exception('No active service and no matching service found for URL "$url"');
+      }
+      _logger.w('Using fallback active service: ${_activeService!.metadata.sourceName}');
+      serviceToUse = _activeService!;
     }
 
-    final streamMap = await JavaScriptService.instance.extractStreamUrlWithService(url, _activeService!);
+    final streamMap = await JavaScriptService.instance.extractStreamUrlWithService(url, serviceToUse);
     
     // Stream processing debug info
     
     // Convert Map<String, dynamic> to StreamData
-    if (streamMap.isNotEmpty && streamMap['streams'] != null) {
+    if (streamMap != null && streamMap.isNotEmpty && streamMap['streams'] != null) {
       final streamsList = streamMap['streams'] as List;
       final streams = streamsList.map((stream) {
         return StreamSource(
@@ -266,7 +309,7 @@ class ServiceManager {
         subtitles: List<String>.from(streamMap['subtitles'] ?? []),
       );
       return streamData;
-    } else if (streamMap['url'] != null) {
+    } else if (streamMap != null && streamMap['url'] != null) {
       // Handle simple URL case
       return StreamData(
         streams: [StreamSource(

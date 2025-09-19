@@ -694,80 +694,122 @@ class JavaScriptService {
     }
   }
 
-  Future<MediaItem> extractDetails(String url) async {
+  Future<MediaItem> extractDetails(String url, Service service) async {
     if (!_isInitialized) await initialize();
 
     try {
       _logger.i('📋 Extracting details from $url');
       
-      // Set up Promise result variable and execute extractDetails
-      // Note: This method needs to be updated to use service-specific runtime
-      // For now, create a temporary runtime (this will be updated later)
-      final jsRuntime = getJavascriptRuntime(forceJavascriptCoreOnAndroid: true);
-      _setupJavaScriptEnvironmentForRuntime(jsRuntime, 'temp_details');
+      final scriptContent = await _loadServiceScriptFromLocal(service);
+      
+      final jsRuntime = _getServiceRuntime(service.id);
+      final result = await _executeDetailsExtractionWithRuntime(url, scriptContent, jsRuntime);
+
+      if (result != null && result.isNotEmpty) {
+        final firstResult = result[0];
+         return MediaItem(
+          description: firstResult['description'] ?? 'N/A',
+          aliases: firstResult['aliases'] ?? 'N/A',
+          airdate: firstResult['airdate'] ?? 'N/A',
+        );
+      }
+      
+      return const MediaItem(description: 'N/A', aliases: 'N/A', airdate: 'N/A');
+    } catch (e) {
+      _logger.e('💥 Extract details failed: $e');
+      throw Exception('Extract details failed: $e');
+    }
+  }
+
+  Future<dynamic> _executeDetailsExtractionWithRuntime(String detailUrl, String scriptContent, JavascriptRuntime jsRuntime) async {
+    try {
+      _logger.d('Executing JavaScript details extraction');
+
+      final scriptLoadedKey = '${jsRuntime.hashCode}-${scriptContent.hashCode}';
+      if (_scriptsLoadedInRuntime[scriptLoadedKey] != true) {
+        _logger.i('📜 Executing script for details for the first time in this runtime.');
+        try {
+          final wrappedScript = '''
+            try {
+              $scriptContent
+            } catch (e) {
+              throw 'SORA_SCRIPT_EVAL_ERROR: ' + e.toString();
+            }
+          ''';
+          jsRuntime.evaluate(wrappedScript);
+
+          final functionTest = jsRuntime.evaluate('typeof extractDetails');
+          if (functionTest.stringResult != 'function') {
+            throw Exception('extractDetails function not available after script execution: ${functionTest.stringResult}');
+          }
+        } catch (e) {
+          _logger.e('❌ Script evaluation failed for details: $e');
+          throw Exception('Script evaluation failed for details: $e');
+        }
+        _scriptsLoadedInRuntime[scriptLoadedKey] = true;
+      } else {
+        _logger.i('📜 Script content for details already evaluated, skipping.');
+      }
+
+      final executionId = DateTime.now().millisecondsSinceEpoch.toString();
       jsRuntime.evaluate('''
-        var detailsPromiseResult = null;
-        var detailsPromiseError = null;
-        var detailsPromiseComplete = false;
+        var detailsPromiseResult_$executionId = null;
+        var detailsPromiseError_$executionId = null;
+        var detailsPromiseComplete_$executionId = false;
         
         (async function() {
           try {
+            let results;
             if (typeof extractDetails === 'function') {
-              const details = await extractDetails('$url');
-              detailsPromiseResult = typeof details === 'string' ? details : JSON.stringify(details);
-              detailsPromiseComplete = true;
+              results = await extractDetails("$detailUrl");
             } else {
-              detailsPromiseError = 'extractDetails function not found';
-              detailsPromiseComplete = true;
+              throw new Error('No extractDetails function found');
             }
+            detailsPromiseResult_$executionId = JSON.stringify(results);
+            detailsPromiseComplete_$executionId = true;
           } catch (error) {
-            detailsPromiseError = error.toString();
-            detailsPromiseComplete = true;
+            detailsPromiseError_$executionId = error.toString();
+            detailsPromiseComplete_$executionId = true;
           }
         })();
       ''');
 
-      // Poll for completion
-      for (int i = 0; i < 300; i++) { // 30 seconds timeout
+      final maxIterations = 400; // 40 seconds
+      for (int i = 0; i < maxIterations; i++) {
         await Future.delayed(const Duration(milliseconds: 100));
-        
-        final completeResult = jsRuntime.evaluate('detailsPromiseComplete');
+        final completeResult = jsRuntime.evaluate('detailsPromiseComplete_$executionId');
         if (completeResult.stringResult == 'true') {
-          final errorResult = jsRuntime.evaluate('detailsPromiseError');
-          if (errorResult.stringResult.isNotEmpty) {
-            throw Exception('JavaScript extractDetails error: ${errorResult.stringResult}');
+          final errorResult = jsRuntime.evaluate('detailsPromiseError_$executionId');
+          final errorString = errorResult.stringResult;
+          if (errorString.isNotEmpty && errorString != 'null' && errorString != 'undefined') {
+            throw Exception('JavaScript details extraction error: $errorString');
           }
           
-          final dataResult = jsRuntime.evaluate('detailsPromiseResult');
+          final dataResult = jsRuntime.evaluate('detailsPromiseResult_$executionId');
           final resultString = dataResult.stringResult;
+
+          jsRuntime.evaluate('''
+            delete window.detailsPromiseResult_$executionId;
+            delete window.detailsPromiseError_$executionId;
+            delete window.detailsPromiseComplete_$executionId;
+          ''');
           
-          if (resultString.isNotEmpty) {
+          if (resultString.isNotEmpty && resultString != 'null') {
             try {
-              final detailsData = json.decode(resultString);
-              if (detailsData is Map) {
-                return MediaItem(
-                  description: detailsData['description'] ?? 'N/A',
-                  aliases: detailsData['aliases'] ?? 'N/A',
-                  airdate: detailsData['airdate'] ?? 'N/A',
-                );
-              }
+              final detailsResults = json.decode(resultString);
+              return detailsResults;
             } catch (e) {
-              _logger.e('❌ Failed to parse details: $e');
-              rethrow;
+              throw Exception('Failed to parse details results: $e');
             }
           }
-          break;
+          return [];
         }
       }
       
-      return const MediaItem(
-        description: 'N/A',
-        aliases: 'N/A',
-        airdate: 'N/A',
-      );
+      throw Exception('Details extraction timeout');
     } catch (e) {
-      _logger.e('💥 Extract details failed: $e');
-      throw Exception('Extract details failed: $e');
+      _logger.e('💥 Details extraction failed: $e');
+      throw Exception('Details extraction failed: $e');
     }
   }
 
@@ -854,14 +896,43 @@ class JavaScriptService {
     try {
       _logger.d('Executing JavaScript episodes extraction');
 
-      // Execute the script that was loaded
-      jsRuntime.evaluate(scriptContent);
+      // Use the same robust script loading logic as search
+      final scriptLoadedKey = '${jsRuntime.hashCode}-${scriptContent.hashCode}';
+      if (_scriptsLoadedInRuntime[scriptLoadedKey] != true) {
+        _logger.i('📜 Executing script for episodes for the first time in this runtime.');
+        try {
+          // Wrap the user script in a try-catch to expose any hidden evaluation errors.
+          final wrappedScript = '''
+            try {
+              $scriptContent
+            } catch (e) {
+              throw 'SORA_SCRIPT_EVAL_ERROR: ' + e.toString();
+            }
+          ''';
+          jsRuntime.evaluate(wrappedScript);
+
+          final allGlobalsResult = jsRuntime.evaluate('JSON.stringify(Object.keys(this))');
+          _logger.i('🔍 JS Global Scope Keys: ${allGlobalsResult.stringResult}');
+
+          final functionTest = jsRuntime.evaluate('typeof extractEpisodes');
+          if (functionTest.stringResult != 'function') {
+            throw Exception('extractEpisodes function not available after script execution: ${functionTest.stringResult}');
+          }
+        } catch (e) {
+          _logger.e('❌ Script evaluation failed for episodes: $e');
+          throw Exception('Script evaluation failed for episodes: $e');
+        }
+        _scriptsLoadedInRuntime[scriptLoadedKey] = true;
+      } else {
+        _logger.i('📜 Script content for episodes already evaluated, skipping.');
+      }
 
       // Set up Promise result variable and execute episodes extraction
+      final executionId = DateTime.now().millisecondsSinceEpoch.toString();
       jsRuntime.evaluate('''
-        var episodesPromiseResult = null;
-        var episodesPromiseError = null;
-        var episodesPromiseComplete = false;
+        var episodesPromiseResult_$executionId = null;
+        var episodesPromiseError_$executionId = null;
+        var episodesPromiseComplete_$executionId = false;
         
         (async function() {
           try {
@@ -873,37 +944,43 @@ class JavaScriptService {
             } else {
               throw new Error('No extractEpisodes function found');
             }
-            episodesPromiseResult = JSON.stringify(results);
-            episodesPromiseComplete = true;
+            episodesPromiseResult_$executionId = JSON.stringify(results);
+            episodesPromiseComplete_$executionId = true;
             console.log('Episodes extraction completed successfully');
           } catch (error) {
             console.log('Episodes extraction error:', error.toString());
-            episodesPromiseError = error.toString();
-            episodesPromiseComplete = true;
+            episodesPromiseError_$executionId = error.toString();
+            episodesPromiseComplete_$executionId = true;
           }
         })();
       ''');
 
       // Poll for completion - unified timeout with JavaScriptCore
       final maxIterations = 400; // 40 seconds
-      final pollInterval = 100; // 100ms
-      
       for (int i = 0; i < maxIterations; i++) {
-        await Future.delayed(Duration(milliseconds: pollInterval));
+        await Future.delayed(const Duration(milliseconds: 100));
         
-        final completeResult = jsRuntime.evaluate('episodesPromiseComplete');
+        final completeResult = jsRuntime.evaluate('episodesPromiseComplete_$executionId');
         if (completeResult.stringResult == 'true') {
-          final errorResult = jsRuntime.evaluate('episodesPromiseError');
+          final errorResult = jsRuntime.evaluate('episodesPromiseError_$executionId');
           final errorString = errorResult.stringResult;
           if (errorString.isNotEmpty && errorString != 'null' && errorString != 'undefined') {
             throw Exception('JavaScript episodes extraction error: $errorString');
           }
           
-          final dataResult = jsRuntime.evaluate('episodesPromiseResult');
+          final dataResult = jsRuntime.evaluate('episodesPromiseResult_$executionId');
           final resultString = dataResult.stringResult;
+
+          // Cleanup execution-specific variables
+          jsRuntime.evaluate('''
+            delete window.episodesPromiseResult_$executionId;
+            delete window.episodesPromiseError_$executionId;
+            delete window.episodesPromiseComplete_$executionId;
+          ''');
           
           if (resultString.isNotEmpty && resultString != 'null') {
             try {
+              // The JS function already returns a stringified JSON, so just decode it.
               final episodesResults = json.decode(resultString);
               _logger.i('🔍 Parsed episodes results: $episodesResults');
               return episodesResults;
@@ -912,10 +989,17 @@ class JavaScriptService {
               throw Exception('Failed to parse episodes results: $e');
             }
           }
-          break;
+          return []; // Return empty list if result is null or empty
         }
       }
       
+      // Cleanup on timeout
+      jsRuntime.evaluate('''
+        delete window.episodesPromiseResult_$executionId;
+        delete window.episodesPromiseError_$executionId;
+        delete window.episodesPromiseComplete_$executionId;
+      ''');
+
       throw Exception('Episodes extraction timeout');
     } catch (e) {
       _logger.e('💥 Episodes extraction failed: $e');
@@ -927,14 +1011,40 @@ class JavaScriptService {
     try {
       _logger.d('Executing JavaScript stream extraction');
 
-      // Execute the script that was loaded
-      jsRuntime.evaluate(scriptContent);
+      // Use the same robust script loading logic as search
+      final scriptLoadedKey = '${jsRuntime.hashCode}-${scriptContent.hashCode}';
+      if (_scriptsLoadedInRuntime[scriptLoadedKey] != true) {
+        _logger.i('📜 Executing script for stream for the first time in this runtime.');
+        try {
+          // Wrap the user script in a try-catch to expose any hidden evaluation errors.
+          final wrappedScript = '''
+            try {
+              $scriptContent
+            } catch (e) {
+              throw 'SORA_SCRIPT_EVAL_ERROR: ' + e.toString();
+            }
+          ''';
+          jsRuntime.evaluate(wrappedScript);
+
+          final functionTest = jsRuntime.evaluate('typeof extractStreamUrl');
+          if (functionTest.stringResult != 'function') {
+            throw Exception('extractStreamUrl function not available after script execution: ${functionTest.stringResult}');
+          }
+        } catch (e) {
+          _logger.e('❌ Script evaluation failed for stream: $e');
+          throw Exception('Script evaluation failed for stream: $e');
+        }
+        _scriptsLoadedInRuntime[scriptLoadedKey] = true;
+      } else {
+        _logger.i('📜 Script content for stream already evaluated, skipping.');
+      }
 
       // Set up Promise result variable and execute stream URL extraction
+      final executionId = DateTime.now().millisecondsSinceEpoch.toString();
       jsRuntime.evaluate('''
-        var streamPromiseResult = null;
-        var streamPromiseError = null;
-        var streamPromiseComplete = false;
+        var streamPromiseResult_$executionId = null;
+        var streamPromiseError_$executionId = null;
+        var streamPromiseComplete_$executionId = false;
         
         (async function() {
           try {
@@ -946,69 +1056,53 @@ class JavaScriptService {
             } else {
               throw new Error('No extractStreamUrl function found');
             }
-            streamPromiseResult = JSON.stringify(results);
-            streamPromiseComplete = true;
+            streamPromiseResult_$executionId = JSON.stringify(results);
+            streamPromiseComplete_$executionId = true;
             console.log('Stream URL extraction completed successfully');
           } catch (error) {
             console.log('Stream URL extraction error:', error.toString());
-            streamPromiseError = error.toString();
-            streamPromiseComplete = true;
+            streamPromiseError_$executionId = error.toString();
+            streamPromiseComplete_$executionId = true;
           }
         })();
       ''');
 
       // Poll for completion - unified timeout for streaming with JavaScriptCore
       final maxIterations = 600; // 60 seconds for streaming operations
-      final pollInterval = 100; // 100ms
-      
       for (int i = 0; i < maxIterations; i++) {
-        await Future.delayed(Duration(milliseconds: pollInterval));
+        await Future.delayed(const Duration(milliseconds: 100));
         
-        final completeResult = jsRuntime.evaluate('streamPromiseComplete');
+        final completeResult = jsRuntime.evaluate('streamPromiseComplete_$executionId');
         if (completeResult.stringResult == 'true') {
-          final errorResult = jsRuntime.evaluate('streamPromiseError');
+          final errorResult = jsRuntime.evaluate('streamPromiseError_$executionId');
           final errorString = errorResult.stringResult;
           if (errorString.isNotEmpty && errorString != 'null' && errorString != 'undefined') {
             throw Exception('JavaScript stream URL extraction error: $errorString');
           }
           
-          final dataResult = jsRuntime.evaluate('streamPromiseResult');
+          final dataResult = jsRuntime.evaluate('streamPromiseResult_$executionId');
           final resultString = dataResult.stringResult;
-          
+
+          // Cleanup execution-specific variables
+          jsRuntime.evaluate('''
+            delete window.streamPromiseResult_$executionId;
+            delete window.streamPromiseError_$executionId;
+            delete window.streamPromiseComplete_$executionId;
+          ''');
+
           if (resultString.isNotEmpty && resultString != 'null') {
             try {
               _logger.i('🔍 Raw result string: $resultString');
-              _logger.i('🔍 Result string type: ${resultString.runtimeType}');
-              _logger.i('🔍 Result string length: ${resultString.length}');
-              _logger.i('🔍 First 10 characters: "${resultString.substring(0, 10)}"');
-              _logger.i('🔍 Last 10 characters: "${resultString.substring(resultString.length - 10)}"');
-              _logger.i('🔍 Starts with {: ${resultString.startsWith('{')}');
-              _logger.i('🔍 Ends with }: ${resultString.endsWith('}')}');
-              
-              // Handle multiple levels of JSON escaping
               String processedString = resultString;
-              _logger.i('🔧 Processing result string for multiple escaping levels');
-              
-              // Remove outer quotes if present
               if (processedString.startsWith('"') && processedString.endsWith('"')) {
                 processedString = processedString.substring(1, processedString.length - 1);
-                _logger.i('🔧 Removed outer quotes');
               }
-              
-              // Unescape internal quotes
               processedString = processedString.replaceAll('\\"', '"');
-              _logger.i('🔧 Unescaped internal quotes');
-              _logger.i('🔧 Final processed string: $processedString');
-              _logger.i('🔧 Processed string starts with {: ${processedString.startsWith('{')}');
-              _logger.i('🔧 Processed string ends with }: ${processedString.endsWith('}')}');
               
-              // Try to decode the JSON using the processed string
               dynamic decodedResult;
               try {
                 decodedResult = jsonDecode(processedString);
-                _logger.i('🔍 jsonDecode successful with processed string');
               } catch (e) {
-                _logger.e('❌ jsonDecode failed with processed string: $e');
                 // If JSON decode fails, treat as plain URL string
                 return {
                   'streams': [
@@ -1018,37 +1112,11 @@ class JavaScriptService {
                 };
               }
               
-              _logger.i('🔍 Decoded result: $decodedResult');
               _logger.i('🔍 Decoded result type: ${decodedResult.runtimeType}');
               
-              // Check if the result is already a properly structured stream response
               if (decodedResult is Map<String, dynamic>) {
-                // If it already has streams array, return it directly
-                if (decodedResult.containsKey('streams') && decodedResult['streams'] is List) {
-                  _logger.i('✅ Returning already structured stream data with ${(decodedResult['streams'] as List).length} streams');
-                  return decodedResult;
-                }
-                // If it has 'url' field directly, it might be a single stream - wrap it
-                else if (decodedResult.containsKey('url')) {
-                  _logger.i('🔧 Wrapping single stream URL: ${decodedResult['url']}');
-                  return {
-                    'streams': [
-                      {
-                        'url': decodedResult['url'],
-                        'headers': decodedResult['headers'] ?? {},
-                      }
-                    ],
-                    'subtitles': List<String>.from(decodedResult['subtitles'] ?? []),
-                  };
-                }
-                // Otherwise, treat the whole object as metadata and look for URL
-                else {
-                  _logger.w('⚠️ Unexpected Map structure in stream results: $decodedResult');
-                  return decodedResult;
-                }
+                return decodedResult;
               } else if (decodedResult is String) {
-                // If it's just a URL string, wrap it
-                _logger.i('🔧 Wrapping decoded URL string: $decodedResult');
                 return {
                   'streams': [
                     {'url': decodedResult, 'headers': {}}
@@ -1057,20 +1125,24 @@ class JavaScriptService {
                 };
               } else {
                 _logger.w('⚠️ Unknown decoded results format: $decodedResult (${decodedResult.runtimeType})');
-                return {
-                  'streams': [],
-                  'subtitles': [],
-                };
+                return null;
               }
             } catch (e) {
               _logger.e('❌ Failed to parse stream results: $e');
               throw Exception('Failed to parse stream results: $e');
             }
           }
-          break;
+          return null; // Return null if result is empty
         }
       }
       
+      // Cleanup on timeout
+      jsRuntime.evaluate('''
+        delete window.streamPromiseResult_$executionId;
+        delete window.streamPromiseError_$executionId;
+        delete window.streamPromiseComplete_$executionId;
+      ''');
+
       throw Exception('Stream URL extraction timeout');
     } catch (e) {
       _logger.e('💥 Stream URL extraction failed: $e');
