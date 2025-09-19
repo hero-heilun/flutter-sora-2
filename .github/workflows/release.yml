@@ -13,7 +13,7 @@ on:
 
 jobs:
   build_android:
-    name: Build Android AppBundle
+    name: Build Android APK
     runs-on: ubuntu-latest
     env:
       # Create a job-level env var to check for the secret's existence.
@@ -27,7 +27,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: "11.x"
+          java-version: "17"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -51,19 +51,19 @@ jobs:
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
 
-      - name: Build Android AppBundle (Unsigned)
+      - name: Build Android APK (Unsigned)
         if: env.HAS_KEYSTORE == 'false'
         run: |
-          flutter build appbundle \
+          flutter build apk \
             --release \
             --build-name=${{ github.event.inputs.version }} \
             --build-number=${{ github.run_number }}
 
-      - name: Build Android AppBundle (Signed)
+      - name: Build Android APK (Signed)
         if: env.HAS_KEYSTORE == 'true'
         # Assumes your gradle file is set up to read these environment variables for signing.
         run: |
-          flutter build appbundle \
+          flutter build apk \
             --release \
             --build-name=${{ github.event.inputs.version }} \
             --build-number=${{ github.run_number }}
@@ -73,8 +73,8 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
 
-      - name: Upload Android AppBundle
+      - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: release-android-appbundle
-          path: build/app/outputs/bundle/release/app-release.aab
+          name: release-android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
