@@ -62,11 +62,12 @@ class HttpService {
       },
     ));
 
-    _dio.interceptors.add(LogInterceptor(
-      requestBody: false,
-      responseBody: false,
-      logPrint: (obj) => _logger.d(obj),
-    ));
+    // Disable HTTP logging to prevent Android log quota issues
+    // _dio.interceptors.add(LogInterceptor(
+    //   requestBody: false,
+    //   responseBody: false,
+    //   logPrint: (obj) => _logger.d(obj),
+    // ));
 
     _isInitialized = true;
     _logger.i('HTTP service initialized');

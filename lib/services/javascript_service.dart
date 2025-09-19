@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:logger/logger.dart';
 import 'package:flutter_js/flutter_js.dart';
 import 'package:path_provider/path_provider.dart';
@@ -67,6 +68,9 @@ class JavaScriptService {
   }
 
   void _setupJavaScriptEnvironmentForRuntime(JavascriptRuntime jsRuntime, String serviceId) {
+    // Add the original _0xB4F2 function implementation first
+    _setupWeirdCode(jsRuntime);
+    
     // Set up a service-specific fetchv2 message handler to prevent concurrency issues
     final channelName = 'fetchv2_request_$serviceId';
     _logger.i('🔧 Setting up $channelName handler for runtime $serviceId');
@@ -108,18 +112,6 @@ class JavaScriptService {
           );
           
           _logger.i('🌐 HTTP request successful, response length: ${response.length}');
-          _logger.i('🌐 Response preview: ${response.length > 200 ? response.substring(0, 200) + "..." : response}');
-          _logger.i('🌐 Request mapping for $requestId: target service = ${_requestToRuntime[requestId]}');
-          
-          // Debug: Show first 50 chars of raw response to check format
-          final first50 = response.length > 50 ? response.substring(0, 50) : response;
-          _logger.i('🌐 Raw response first 50 chars: "$first50"');
-          
-          // Check if response looks like JSON
-          final trimmedResponse = response.trim();
-          final looksLikeJson = trimmedResponse.startsWith('{') || trimmedResponse.startsWith('[');
-          _logger.i('🌐 Response looks like JSON: $looksLikeJson');
-          _logger.i('🌐 Calling JavaScript callback for $requestId');
           
           // Call JavaScript callback with success result in the correct runtime
           try {
@@ -127,7 +119,6 @@ class JavaScriptService {
             final JavascriptRuntime? targetJsRuntime = _serviceRuntimes[targetRuntime];
             
             if (targetJsRuntime != null) {
-              _logger.i('🎯 Delivering callback to correct runtime: $targetRuntime');
               targetJsRuntime.evaluate('''
                 console.log('✅ Resolving fetchv2 callback for request: $requestId in runtime: $targetRuntime');
                 console.log('fetchv2_callbacks exists:', typeof fetchv2_callbacks !== 'undefined');
@@ -158,7 +149,6 @@ class JavaScriptService {
                   console.log('This may indicate a race condition or the callback was already processed');
                 }
               ''');
-              _logger.i('🌐 JavaScript callback executed successfully in runtime: $targetRuntime');
             } else {
               _logger.e('💥 Target runtime $targetRuntime not found for request $requestId');
             }
@@ -178,7 +168,6 @@ class JavaScriptService {
             final JavascriptRuntime? targetJsRuntime = _serviceRuntimes[targetRuntime];
             
             if (targetJsRuntime != null) {
-              _logger.i('🎯 Delivering error callback to correct runtime: $targetRuntime');
               targetJsRuntime.evaluate('''
                 console.log('❌ Calling error callback for request: $requestId in runtime: $targetRuntime');
                 if (typeof fetchv2_callbacks !== 'undefined' && fetchv2_callbacks['$requestId']) {
@@ -228,6 +217,7 @@ class JavaScriptService {
 
     // Set up fetchv2 JavaScript function with service-specific request IDs
     jsRuntime.evaluate('''
+      
       var fetchv2_callbacks = {};
       var fetchv2_request_id = 0;
       var serviceId = "$serviceId";
@@ -829,9 +819,6 @@ class JavaScriptService {
       final jsRuntime = _getServiceRuntime(service.id);
       final result = await _executeEpisodesExtractionWithRuntime(detailUrl, scriptContent, jsRuntime);
       
-      _logger.i('🔍 Episodes result type: ${result.runtimeType}');
-      _logger.i('🔍 Episodes result is List? ${result is List}');
-      _logger.i('🔍 Episodes result length: ${result is List ? result.length : 'N/A'}');
       
       // Handle both String and List results for episodes
       List<dynamic>? resultList;
@@ -850,7 +837,6 @@ class JavaScriptService {
       }
       
       if (resultList != null && resultList.isNotEmpty) {
-        _logger.i('✅ Found ${resultList.length} episodes');
         return resultList.map<EpisodeLink>((item) => EpisodeLink(
           number: item['number'] ?? 0,
           title: item['title'] ?? 'Episode',
@@ -1043,7 +1029,6 @@ class JavaScriptService {
             try {
               // The JS function already returns a stringified JSON, so just decode it.
               final episodesResults = json.decode(resultString);
-              _logger.i('🔍 Parsed episodes results: $episodesResults');
               return episodesResults;
             } catch (e) {
               _logger.e('❌ Failed to parse episodes results: $e');
@@ -1078,10 +1063,15 @@ class JavaScriptService {
         _logger.i('📜 Executing script for stream for the first time in this runtime.');
         try {
           // Check for modern syntax that needs compatibility conversion
-          final hasModernSyntax = scriptContent.contains('??');
+          final hasNullishCoalescing = scriptContent.contains('??');
+          final hasOptionalChaining = scriptContent.contains('?.');
+          final hasModernSyntax = hasNullishCoalescing || hasOptionalChaining;
           
-          if (hasModernSyntax) {
-            _logger.w('⚠️ Stream script contains modern syntax: ??');
+          if (hasNullishCoalescing) {
+            _logger.w('⚠️ Stream script contains nullish coalescing: ??');
+          }
+          if (hasOptionalChaining) {
+            _logger.w('⚠️ Stream script contains optional chaining: ?.');
           }
 
           String finalScript = scriptContent;
@@ -1091,12 +1081,53 @@ class JavaScriptService {
             // Try to replace with safe alternatives
             String compatibleScript = scriptContent;
             
-            // Replace nullish coalescing with logical OR
-            compatibleScript = compatibleScript.replaceAll(' ?? ', ' || ');
+            if (hasNullishCoalescing) {
+              // Replace nullish coalescing with logical OR (with and without spaces)
+              compatibleScript = compatibleScript.replaceAll(' ?? ', ' || ');
+              compatibleScript = compatibleScript.replaceAll('??', ' || ');
+            }
+            
+            if (hasOptionalChaining) {
+              // Handle optional chaining by converting to safe property access
+              // More comprehensive patterns
+              compatibleScript = compatibleScript.replaceAllMapped(
+                RegExp(r'(\w+)\?\.(\w+)'),
+                (match) => '(${match.group(1)} && ${match.group(1)}.${match.group(2)})'
+              );
+              // Handle nested property access like obj?.prop?.subprop
+              compatibleScript = compatibleScript.replaceAllMapped(
+                RegExp(r'(\([^)]+\))\?\.(\w+)'),
+                (match) => '(${match.group(1)} && ${match.group(1)}.${match.group(2)})'
+              );
+              // Handle method calls like obj?.method()
+              compatibleScript = compatibleScript.replaceAllMapped(
+                RegExp(r'(\w+)\?\.(\w+\([^)]*\))'),
+                (match) => '(${match.group(1)} && ${match.group(1)}.${match.group(2)})'
+              );
+            }
+            
+            // Additional modern syntax fixes
+            // Fix template literals - handle all variations
+            // Handle standalone template literals with variables
+            compatibleScript = compatibleScript.replaceAllMapped(
+              RegExp(r'`([^`]*)\$\{([^}]+)\}([^`]*)`'),
+              (match) => '"${match.group(1)}" + (${match.group(2)}) + "${match.group(3)}"'
+            );
+            
+            // Also handle cases where ${var} appears in strings without backticks (may be from previous transformations)
+            compatibleScript = compatibleScript.replaceAllMapped(
+              RegExp(r'\$\{([^}]+)\}'),
+              (match) => '" + (${match.group(1)}) + "'
+            );
+            
+            // Fix const/let declarations to var for better compatibility
+            compatibleScript = compatibleScript.replaceAll('const ', 'var ');
+            compatibleScript = compatibleScript.replaceAll('let ', 'var ');
             
             _logger.i('🔧 Converting stream script to compatible syntax...');
             finalScript = compatibleScript;
           }
+
 
           // First try to execute script directly to catch syntax errors
           _logger.i('🔍 Testing script syntax...');
@@ -1105,7 +1136,7 @@ class JavaScriptService {
               eval(`$finalScript`); 
               "SYNTAX_OK";
             } catch(e) { 
-              "SYNTAX_ERROR: " + e.toString(); 
+              "SYNTAX_ERROR: " + e.toString() + " (Line: " + (e.lineNumber || "unknown") + ", Column: " + (e.columnNumber || "unknown") + ")"; 
             }
           ''';
           final syntaxTest = jsRuntime.evaluate(syntaxTestScript);
@@ -1156,8 +1187,19 @@ class JavaScriptService {
             let results;
             if (typeof extractStreamUrl === 'function') {
               console.log('Calling extractStreamUrl function with URL: $episodeUrl');
+              console.log('Available functions in global scope:', Object.getOwnPropertyNames(this).filter(name => typeof this[name] === 'function'));
+              console.log('Checking for _0xCheck function:', typeof _0xCheck);
+              if (typeof _0xCheck === 'function') {
+                console.log('_0xCheck result:', _0xCheck());
+                console.log('_0xB4F2 result:', _0xB4F2());
+                console.log('_0xB4F2 result type:', typeof _0xB4F2());
+                console.log('_0xB4F2 result length:', _0xB4F2().length);
+                console.log('_0x7E9A result:', _0x7E9A(_0xB4F2()));
+              }
               results = await extractStreamUrl("$episodeUrl");
               console.log('ExtractStreamUrl function returned:', results);
+              console.log('Result type:', typeof results);
+              console.log('Result length:', results ? results.length : 'null/undefined');
             } else {
               throw new Error('No extractStreamUrl function found');
             }
@@ -1166,6 +1208,7 @@ class JavaScriptService {
             console.log('Stream URL extraction completed successfully');
           } catch (error) {
             console.log('Stream URL extraction error:', error.toString());
+            console.log('Error stack:', error.stack);
             streamPromiseError_$executionId = error.toString();
             streamPromiseComplete_$executionId = true;
           }
@@ -1197,7 +1240,6 @@ class JavaScriptService {
 
           if (resultString.isNotEmpty && resultString != 'null') {
             try {
-              _logger.i('🔍 Raw result string: $resultString');
               String processedString = resultString;
               if (processedString.startsWith('"') && processedString.endsWith('"')) {
                 processedString = processedString.substring(1, processedString.length - 1);
@@ -1217,7 +1259,6 @@ class JavaScriptService {
                 };
               }
               
-              _logger.i('🔍 Decoded result type: ${decodedResult.runtimeType}');
               
               if (decodedResult is Map<String, dynamic>) {
                 return decodedResult;
@@ -1228,6 +1269,14 @@ class JavaScriptService {
                   ],
                   'subtitles': [],
                 };
+              } else if (decodedResult is List && decodedResult.isNotEmpty) {
+                final firstItem = decodedResult[0];
+                if (firstItem is Map && firstItem['provider'] == 'Error') {
+                  _logger.e('❌ JS script returned a provider error: $firstItem');
+                  throw Exception('JavaScript stream extraction failed: Script returned a provider error.');
+                }
+                _logger.w('⚠️ Unknown list format in stream results: $decodedResult');
+                return null;
               } else {
                 _logger.w('⚠️ Unknown decoded results format: $decodedResult (${decodedResult.runtimeType})');
                 return null;
@@ -1253,5 +1302,35 @@ class JavaScriptService {
       _logger.e('💥 Stream URL extraction failed: $e');
       throw Exception('Stream URL extraction failed: $e');
     }
+  }
+
+  // Injects the _0xB4F2 function directly into the JS runtime.
+  // This function generates a 16-character string by randomly placing
+  // the letters of "cranci" and filling the rest with random alphanumeric characters.
+  void _setupWeirdCode(JavascriptRuntime jsRuntime) {
+    jsRuntime.evaluate('''
+      function _0xB4F2() {
+        const initialChars = ['c', 'r', 'a', 'n', 'c', 'i'];
+        let resultArray = new Array(16).fill('');
+        let usedIndices = new Set();
+        const allChars = 'abcdefghijklmnopqrstuvwxyz0123456789'.split('');
+
+        initialChars.forEach(char => {
+          let randomIndex;
+          do {
+            randomIndex = Math.floor(Math.random() * 16);
+          } while (usedIndices.has(randomIndex));
+          usedIndices.add(randomIndex);
+          resultArray[randomIndex] = char;
+        });
+
+        for (let i = 0; i < 16; i++) {
+          if (resultArray[i] === '') {
+            resultArray[i] = allChars[Math.floor(Math.random() * allChars.length)];
+          }
+        }
+        return resultArray.join('');
+      }
+    ''');
   }
 }
