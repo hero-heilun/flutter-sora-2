@@ -1,0 +1,113 @@
+# .github/workflows/release.yml
+
+name: Build Flutter Release
+
+# This workflow is triggered manually from the Actions tab on GitHub.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release Version (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+jobs:
+  build_android:
+    name: Build Android AppBundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: "11.x"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.x' # Or specify your project's Flutter version
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      # Note: You must create these secrets in your GitHub repository settings
+      # Go to Settings > Secrets and variables > Actions > New repository secret
+      # 1. ANDROID_KEYSTORE_BASE64: Your keystore file, base64 encoded.
+      #    On macOS/Linux: base64 -i your_keystore.jks | pbcopy
+      # 2. ANDROID_KEYSTORE_PASSWORD: The password for the keystore.
+      # 3. ANDROID_KEY_ALIAS: The alias for your release key.
+      # 4. ANDROID_KEY_PASSWORD: The password for the key alias.
+      - name: Decode and install Android keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+        # This step is conditional and will only run if the secret is present.
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+
+      - name: Build Android AppBundle
+        run: |
+          flutter build appbundle \
+            --release \
+            --build-name=${{ github.event.inputs.version }} \
+            --build-number=${{ github.run_number }}
+        # The following arguments are only added if the secrets are available for signing.
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/android/app/upload-keystore.jks
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          # This part is a bit tricky in shell. A better way is to use a gradle.properties file.
+          # For simplicity here, we assume you have set up signing in your build.gradle.kts
+          # Or you can pass these as command line arguments if your gradle setup supports it.
+          # e.g. flutter build appbundle --release ... -PkeyAlias=...
+
+      - name: Upload Android AppBundle
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-android-appbundle
+          path: build/app/outputs/bundle/release/app-release.aab
+
+  build_ios:
+    name: Build iOS IPA
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.x' # Or specify your project's Flutter version
+
+      # Note: You must create these secrets in your GitHub repository settings
+      # for iOS signing. This is more complex than Android.
+      # 1. IOS_DIST_CERT_BASE64: Your distribution certificate (.p12), base64 encoded.
+      # 2. IOS_DIST_CERT_PASSWORD: The password for the certificate.
+      # 3. IOS_PROVISIONING_PROFILE_BASE64: Your App Store provisioning profile, base64 encoded.
+      # You would then have a step here to decode and install them into the keychain
+      # and the correct directory. For simplicity, this example omits the signing steps.
+      # You can build an unsigned IPA for testing or use a service like Codemagic
+      # which simplifies this process.
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Build iOS IPA
+        run: |
+          flutter build ipa \
+            --release \
+            --build-name=${{ github.event.inputs.version }} \
+            --build-number=${{ github.run_number }} \
+            --export-options-plist=ios/Runner/Info.plist 
+            # Note: You might need a dedicated ExportOptions.plist for App Store distribution
+
+      - name: Upload iOS IPA
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-ios-ipa
+          path: build/ios/ipa/*.ipa
