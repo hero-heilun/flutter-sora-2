@@ -495,10 +495,7 @@ class JavaScriptService {
         try {
           // Check for modern JavaScript syntax that might not be supported
           final modernSyntaxPatterns = [
-            '?.',  // Optional chaining
-            '??',  // Nullish coalescing
-            '?.(',  // Optional chaining with function calls
-            '?.[',  // Optional chaining with bracket notation
+            '??',  // Nullish coalescing - this is definitely not supported by flutter_js
           ];
           
           bool hasModernSyntax = false;
@@ -512,15 +509,8 @@ class JavaScriptService {
           if (hasModernSyntax) {
             _logger.w('⚠️ Script contains modern JavaScript syntax that may not be supported by Flutter JS engine');
             
-            // Try to replace optional chaining with safe alternatives
+            // Try to replace with safe alternatives
             String compatibleScript = cleanedScript;
-            
-            // Replace optional chaining operators with safer alternatives
-            // This is a basic replacement - might need more sophisticated parsing
-            compatibleScript = compatibleScript.replaceAllMapped(
-              RegExp(r'(\w+)\?\.\s*(\w+)'),
-              (match) => '(${match.group(1)} && ${match.group(1)}.${match.group(2)})'
-            );
             
             // Replace nullish coalescing with logical OR
             compatibleScript = compatibleScript.replaceAll(' ?? ', ' || ');
@@ -533,9 +523,22 @@ class JavaScriptService {
           final result = jsRuntime.evaluate(cleanedScript);
           _logger.i('✅ Script evaluation completed');
           
+          if (result.isError) {
+            _logger.e('❌ JavaScript evaluation error: ${result.stringResult}');
+            throw Exception('JavaScript evaluation error: ${result.stringResult}');
+          }
+          
           // Verify that main functions are now available
           final functionTest = jsRuntime.evaluate('typeof searchResults');
           if (functionTest.stringResult != 'function') {
+            _logger.e('❌ searchResults function not available after script execution: ${functionTest.stringResult}');
+            
+            // Debug: check what functions are actually available
+            final availableFunctions = jsRuntime.evaluate('''
+              Object.getOwnPropertyNames(this).filter(name => typeof this[name] === 'function')
+            ''');
+            _logger.e('🔍 Available functions: ${availableFunctions.stringResult}');
+            
             throw Exception('searchResults function not available after script execution: ${functionTest.stringResult}');
           }
           
@@ -901,21 +904,79 @@ class JavaScriptService {
       if (_scriptsLoadedInRuntime[scriptLoadedKey] != true) {
         _logger.i('📜 Executing script for episodes for the first time in this runtime.');
         try {
+          // Check for modern JavaScript syntax that might not be supported
+          final modernSyntaxPatterns = [
+            '??',  // Nullish coalescing - this is definitely not supported by flutter_js
+          ];
+          
+          bool hasModernSyntax = false;
+          for (String pattern in modernSyntaxPatterns) {
+            if (scriptContent.contains(pattern)) {
+              _logger.w('⚠️ Episodes script contains modern syntax: $pattern');
+              hasModernSyntax = true;
+            }
+          }
+          
+          String finalScript = scriptContent;
+          if (hasModernSyntax) {
+            _logger.w('⚠️ Episodes script contains modern JavaScript syntax that may not be supported by Flutter JS engine');
+            
+            // Try to replace with safe alternatives
+            String compatibleScript = scriptContent;
+            
+            // Replace nullish coalescing with logical OR
+            compatibleScript = compatibleScript.replaceAll(' ?? ', ' || ');
+            
+            _logger.i('🔧 Converting episodes script to compatible syntax...');
+            finalScript = compatibleScript;
+          }
+
+          // First try to execute script directly to catch syntax errors
+          _logger.i('🔍 Testing script syntax...');
+          final syntaxTestScript = '''
+            try { 
+              eval(`$finalScript`); 
+              "SYNTAX_OK";
+            } catch(e) { 
+              "SYNTAX_ERROR: " + e.toString(); 
+            }
+          ''';
+          final syntaxTest = jsRuntime.evaluate(syntaxTestScript);
+          if (syntaxTest.stringResult.startsWith('SYNTAX_ERROR:')) {
+            _logger.e('❌ JavaScript syntax error: ${syntaxTest.stringResult}');
+            throw Exception('JavaScript syntax error: ${syntaxTest.stringResult}');
+          }
+          
           // Wrap the user script in a try-catch to expose any hidden evaluation errors.
           final wrappedScript = '''
             try {
-              $scriptContent
+              $finalScript
             } catch (e) {
               throw 'SORA_SCRIPT_EVAL_ERROR: ' + e.toString();
             }
           ''';
-          jsRuntime.evaluate(wrappedScript);
+          final evalResult = jsRuntime.evaluate(wrappedScript);
+          
+          if (evalResult.isError) {
+            _logger.e('❌ Episodes JavaScript execution error: ${evalResult.stringResult}');
+            throw Exception('Episodes JavaScript execution error: ${evalResult.stringResult}');
+          }
+          
+          _logger.i('✅ Episodes script evaluation completed successfully');
 
           final allGlobalsResult = jsRuntime.evaluate('JSON.stringify(Object.keys(this))');
           _logger.i('🔍 JS Global Scope Keys: ${allGlobalsResult.stringResult}');
 
           final functionTest = jsRuntime.evaluate('typeof extractEpisodes');
           if (functionTest.stringResult != 'function') {
+            _logger.e('❌ extractEpisodes function not available after script execution: ${functionTest.stringResult}');
+            
+            // Debug: check what functions are actually available
+            final availableFunctions = jsRuntime.evaluate('''
+              Object.getOwnPropertyNames(this).filter(name => typeof this[name] === 'function')
+            ''');
+            _logger.e('🔍 Available functions: ${availableFunctions.stringResult}');
+            
             throw Exception('extractEpisodes function not available after script execution: ${functionTest.stringResult}');
           }
         } catch (e) {
@@ -1016,15 +1077,59 @@ class JavaScriptService {
       if (_scriptsLoadedInRuntime[scriptLoadedKey] != true) {
         _logger.i('📜 Executing script for stream for the first time in this runtime.');
         try {
+          // Check for modern syntax that needs compatibility conversion
+          final hasModernSyntax = scriptContent.contains('??');
+          
+          if (hasModernSyntax) {
+            _logger.w('⚠️ Stream script contains modern syntax: ??');
+          }
+
+          String finalScript = scriptContent;
+          if (hasModernSyntax) {
+            _logger.w('⚠️ Stream script contains modern JavaScript syntax that may not be supported by Flutter JS engine');
+            
+            // Try to replace with safe alternatives
+            String compatibleScript = scriptContent;
+            
+            // Replace nullish coalescing with logical OR
+            compatibleScript = compatibleScript.replaceAll(' ?? ', ' || ');
+            
+            _logger.i('🔧 Converting stream script to compatible syntax...');
+            finalScript = compatibleScript;
+          }
+
+          // First try to execute script directly to catch syntax errors
+          _logger.i('🔍 Testing script syntax...');
+          final syntaxTestScript = '''
+            try { 
+              eval(`$finalScript`); 
+              "SYNTAX_OK";
+            } catch(e) { 
+              "SYNTAX_ERROR: " + e.toString(); 
+            }
+          ''';
+          final syntaxTest = jsRuntime.evaluate(syntaxTestScript);
+          if (syntaxTest.stringResult.startsWith('SYNTAX_ERROR:')) {
+            _logger.e('❌ JavaScript syntax error: ${syntaxTest.stringResult}');
+            throw Exception('JavaScript syntax error: ${syntaxTest.stringResult}');
+          }
+          
           // Wrap the user script in a try-catch to expose any hidden evaluation errors.
           final wrappedScript = '''
             try {
-              $scriptContent
+              $finalScript
             } catch (e) {
               throw 'SORA_SCRIPT_EVAL_ERROR: ' + e.toString();
             }
           ''';
-          jsRuntime.evaluate(wrappedScript);
+          final evalResult = jsRuntime.evaluate(wrappedScript);
+          
+          if (evalResult.isError) {
+            _logger.e('❌ Stream JavaScript execution error: ${evalResult.stringResult}');
+            throw Exception('Stream JavaScript execution error: ${evalResult.stringResult}');
+          }
+          
+          _logger.i('✅ Stream script evaluation completed successfully');
 
           final functionTest = jsRuntime.evaluate('typeof extractStreamUrl');
           if (functionTest.stringResult != 'function') {
